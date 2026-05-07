@@ -1,0 +1,17 @@
+.next/
+node_modules/
+.env.local
+.env*.local
+out/
+build/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Brand assets (not part of the app)
+Logo/
+Fuentes/
+RRSS/
+Manual de marca/

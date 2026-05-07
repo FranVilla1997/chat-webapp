@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+/* ── Venn typeface ─────────────────────────────── */
+@font-face {
+  font-family: 'Venn';
+  src: url('/fonts/Venn-Light.otf') format('opentype');
+  font-weight: 300;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Venn';
+  src: url('/fonts/Venn-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Venn';
+  src: url('/fonts/Venn-Medium.otf') format('opentype');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Venn';
+  src: url('/fonts/Venn-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Venn';
+  src: url('/fonts/Venn-XBold.otf') format('opentype');
+  font-weight: 800;
+  font-display: swap;
+}
+
+/* ── Design tokens ─────────────────────────────── */
+:root {
+  --black:        #000000;
+  --surface-1:    #08080f;
+  --surface-2:    #0e0e1a;
+  --surface-3:    #141424;
+  --border:       rgba(255,255,255,0.07);
+  --blue:         #185de8;
+  --blue-light:   #3b7ef5;
+  --blue-glow:    rgba(24,93,232,0.35);
+  --green:        #6bdda1;
+  --green-glow:   rgba(107,221,161,0.25);
+  --text-primary: #f0f0f5;
+  --text-muted:   #5a5a72;
+  --text-subtle:  #3a3a52;
+}
+
+/* ── Reset ─────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--black);
+  color: var(--text-primary);
+  font-family: 'Venn', system-ui, -apple-system, sans-serif;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: 0.01em;
+}
+
+/* ── Background glow ───────────────────────────── */
+.scala-bg {
+  background: var(--black);
+  position: relative;
+  overflow: hidden;
+}
+.scala-bg::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 45% at 100% 100%, var(--blue-glow) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 30% at 0% 100%,   var(--green-glow) 0%, transparent 70%);
+  z-index: 0;
+}
+.scala-bg > * { position: relative; z-index: 1; }
+
+/* ── Scrollbar ─────────────────────────────────── */
+::-webkit-scrollbar         { width: 3px; }
+::-webkit-scrollbar-track   { background: transparent; }
+::-webkit-scrollbar-thumb   { background: rgba(255,255,255,0.06); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.12); }
+
+/* ── Noise grain overlay (subtle texture) ──────── */
+.grain::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  z-index: 0;
+}
