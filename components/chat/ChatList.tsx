@@ -53,11 +53,14 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
   const [newLeadIds, setNewLeadIds] = useState<Set<string>>(new Set());
   const [activeStage, setActiveStage] = useState('all');
   const [selectedLead, setSelectedLead] = useState<AirtableLead | null>(null);
-  const [seenAt, setSeenAt] = useState<Record<string, string>>(() => {
+  const [seenAt, setSeenAt] = useState<Record<string, string>>({});
+
+  useEffect(() => {
     try {
-      return JSON.parse(localStorage.getItem('scala_seen_leads') ?? '{}');
-    } catch { return {}; }
-  });
+      const stored = JSON.parse(localStorage.getItem('scala_seen_leads') ?? '{}');
+      setSeenAt(stored);
+    } catch { /* empty */ }
+  }, []);
   const [search, setSearch] = useState('');
   const [loggingOut, setLoggingOut] = useState(false);
   const leadsRef = useRef(leads);
