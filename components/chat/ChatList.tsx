@@ -63,10 +63,8 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
   const leadsRef = useRef(leads);
   leadsRef.current = leads;
 
-  // Realtime: suscribir a lead_notifications filtrado por clientId
+  // Realtime: suscribir a cualquier INSERT en lead_notifications
   useEffect(() => {
-    if (!clientId) return;
-
     const channel = supabase
       .channel('lead-notifications')
       .on(
@@ -75,9 +73,12 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
           event: 'INSERT',
           schema: 'public',
           table: 'lead_notifications',
-          filter: `client_id=eq.${clientId}`,
         },
-        async () => {
+        async (payload) => {
+          // Ignorar notificaciones de otros clientes si tenemos clientId
+          const notifClientId = (payload.new as { client_id?: string }).client_id;
+          if (clientId && notifClientId && notifClientId !== clientId) return;
+
           const res = await fetch('/api/leads');
           if (!res.ok) return;
           const { leads: fresh } = await res.json() as { leads: AirtableLead[] };
