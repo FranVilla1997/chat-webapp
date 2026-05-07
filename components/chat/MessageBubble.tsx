@@ -88,7 +88,7 @@ export function MessageBubble({ message, isOptimistic }: MessageBubbleProps) {
     return (
       <div style={{ display: 'flex', justifyContent: 'flex-end', opacity: isOptimistic ? 0.5 : 1 }}>
         <div style={{ maxWidth: '72%', display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
-          <span style={{ ...roleLabel, color: '#185de8', paddingRight: 2 }}>Bot</span>
+          <span style={{ ...roleLabel, color: '#185de8', paddingRight: 2 }}>Sentinel</span>
           <div style={{
             background: '#185de8',
             borderRadius: '6px 4px 6px 6px',

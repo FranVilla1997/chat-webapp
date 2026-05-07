@@ -27,7 +27,7 @@ function formatPhone(p: string) {
 }
 
 const statusConfig = {
-  bot:    { label: 'Bot activo',      dot: '#185de8', ring: 'rgba(24,93,232,0.3)' },
+  bot:    { label: 'Sentinel activo',  dot: '#185de8', ring: 'rgba(24,93,232,0.3)' },
   human:  { label: 'Vendedor activo', dot: '#6bdda1', ring: 'rgba(107,221,161,0.3)' },
   paused: { label: 'Pausado',         dot: '#5a5a72', ring: 'rgba(90,90,114,0.3)' },
 };

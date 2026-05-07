@@ -367,7 +367,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
 
             let msgPrefix = '';
             if (lastMsg?.role === 'human_agent') msgPrefix = 'Vos: ';
-            else if (lastMsg?.role === 'assistant') msgPrefix = 'Bot: ';
+            else if (lastMsg?.role === 'assistant') msgPrefix = 'Sentinel: ';
 
             const msgPreview = isNew
               ? 'Lead nuevo ingresado'
