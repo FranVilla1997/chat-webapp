@@ -35,6 +35,8 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
 
   const [audioSending, setAudioSending] = useState(false);
   const [audioError, setAudioError]     = useState<string | null>(null);
+  const [stageUpdating, setStageUpdating] = useState(false);
+  const [stageError, setStageError]       = useState<string | null>(null);
 
   async function handleSendAudio(base64: string, duration: number) {
     setAudioSending(true);
@@ -77,9 +79,25 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
 
   const isCalificado = leadInfo?.stage?.toLowerCase() === 'calificado';
 
-  function handlePresupuestar() {
-    alert('aca vamos a tener el presupuesto');
-    setPresupuestoEnviado(true);
+  async function handlePresupuestar() {
+    setStageUpdating(true);
+    setStageError(null);
+    try {
+      const res = await fetch('/api/update-lead-stage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recordId: leadId, stageRecordId: 'recFnkusjGH5R7p23' }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json();
+        throw new Error(error ?? 'Error al actualizar etapa');
+      }
+      setPresupuestoEnviado(true);
+    } catch (err) {
+      setStageError(err instanceof Error ? err.message : 'Error al actualizar etapa');
+    } finally {
+      setStageUpdating(false);
+    }
   }
 
   function handlePresupuestoEnviado() {
@@ -152,22 +170,26 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
             display: 'flex', gap: 10, alignItems: 'center',
             background: 'rgba(6,6,12,0.8)',
           }}>
-            <button
-              onClick={handlePresupuestar}
-              style={{
-                padding: '7px 16px',
-                borderRadius: 10,
-                border: isCalificado ? '1px solid rgba(107,221,161,0.5)' : '1px solid rgba(255,255,255,0.12)',
-                background: isCalificado ? 'rgba(107,221,161,0.1)' : 'rgba(255,255,255,0.05)',
-                color: isCalificado ? '#6bdda1' : 'rgba(255,255,255,0.55)',
-                fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                letterSpacing: '0.04em',
-                animation: isCalificado ? 'presupuestoPulse 2s ease-in-out infinite' : 'none',
-                transition: 'all 0.2s',
-              }}
-            >
-              Presupuestar
-            </button>
+            {!presupuestoEnviado && (
+              <button
+                onClick={handlePresupuestar}
+                disabled={stageUpdating}
+                style={{
+                  padding: '7px 16px',
+                  borderRadius: 5,
+                  border: isCalificado ? '1px solid rgba(107,221,161,0.4)' : '1px solid #1e1e2a',
+                  background: isCalificado ? 'rgba(107,221,161,0.08)' : '#12121a',
+                  color: isCalificado ? '#6bdda1' : '#848484',
+                  fontSize: 11, fontWeight: 700, cursor: stageUpdating ? 'not-allowed' : 'pointer',
+                  letterSpacing: '0.06em', textTransform: 'uppercase',
+                  animation: isCalificado && !stageUpdating ? 'presupuestoPulse 2s ease-in-out infinite' : 'none',
+                  transition: 'all 0.15s',
+                  opacity: stageUpdating ? 0.6 : 1,
+                }}
+              >
+                {stageUpdating ? 'Actualizando…' : 'Enviar presupuesto'}
+              </button>
+            )}
 
             {presupuestoEnviado && (
               <button
@@ -212,9 +234,9 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
             <div ref={bottomRef} style={{ height: 8 }} />
           </div>
 
-          {(sendError || audioError) && (
-            <div style={{ padding: '8px 24px', background: 'rgba(248,113,113,0.07)', borderTop: '1px solid rgba(248,113,113,0.15)' }}>
-              <p style={{ fontSize: 11, color: '#f87171' }}>{sendError || audioError}</p>
+          {(sendError || audioError || stageError) && (
+            <div style={{ padding: '8px 24px', background: 'rgba(229,62,62,0.06)', borderTop: '1px solid rgba(229,62,62,0.15)' }}>
+              <p style={{ fontSize: 11, color: '#e53e3e' }}>{sendError || audioError || stageError}</p>
             </div>
           )}
 

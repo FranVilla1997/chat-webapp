@@ -112,3 +112,12 @@ export async function getLeadById(recordId: string): Promise<AirtableLead | null
   const data = await res.json() as { id: string; fields: Record<string, unknown> };
   return mapRecord(data);
 }
+
+export async function updateLeadFields(recordId: string, fields: Record<string, unknown>): Promise<void> {
+  const res = await fetch(`${BASE_URL}/${recordId}`, {
+    method: 'PATCH',
+    headers: HEADERS,
+    body: JSON.stringify({ fields }),
+  });
+  if (!res.ok) throw new Error(`Airtable error: ${res.status} ${await res.text()}`);
+}
