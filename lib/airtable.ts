@@ -91,8 +91,14 @@ export async function getLeadsBySellerName(sellerName: string): Promise<Airtable
   } while (offset);
 
   const STAGE_ORDER: Record<string, number> = {
-    calificado: 0, en_calificacion: 1, en_proceso: 2,
-    nuevo: 3, cerrado: 4, perdido: 5,
+    calificado:       0,
+    en_calificacion:  1,
+    propuesta_enviada:2,
+    en_proceso:       3,
+    nuevo:            4,
+    no_responde:      5,
+    cerrado_ganado:   6,
+    cerrado_perdido:  7,
   };
 
   return leads.sort((a, b) => {

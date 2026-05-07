@@ -20,22 +20,26 @@ const MONO = `'SF Mono', 'Consolas', 'Liberation Mono', monospace`;
 
 /* ── Etapas del embudo ── */
 const FUNNEL: { key: string; label: string; color: string }[] = [
-  { key: 'all',             label: 'Todos',        color: '#848484' },
-  { key: 'calificado',      label: 'Calificado',   color: '#6bdda1' },
-  { key: 'en_calificacion', label: 'Calificando',  color: '#f59e0b' },
-  { key: 'nuevo',           label: 'Nuevo',        color: '#185de8' },
-  { key: 'en_proceso',      label: 'En proceso',   color: '#f59e0b' },
-  { key: 'cerrado',         label: 'Cerrado',      color: '#848484' },
-  { key: 'perdido',         label: 'Perdido',      color: '#e53e3e' },
+  { key: 'all',              label: 'Todos',            color: '#848484' },
+  { key: 'calificado',       label: 'Calificado',       color: '#6bdda1' },
+  { key: 'en_calificacion',  label: 'Calificando',      color: '#f59e0b' },
+  { key: 'propuesta_enviada',label: 'Propuesta',        color: '#185de8' },
+  { key: 'nuevo',            label: 'Nuevo',            color: '#3b7ef5' },
+  { key: 'en_proceso',       label: 'En proceso',       color: '#f59e0b' },
+  { key: 'no_responde',      label: 'No responde',      color: '#848484' },
+  { key: 'cerrado_ganado',   label: 'Ganado',           color: '#6bdda1' },
+  { key: 'cerrado_perdido',  label: 'Perdido',          color: '#e53e3e' },
 ];
 
 const STAGE_BADGE: Record<string, { bg: string; color: string }> = {
-  calificado:       { bg: 'rgba(107,221,161,0.10)', color: '#6bdda1' },
-  en_calificacion:  { bg: 'rgba(245,158,11,0.10)',  color: '#f59e0b' },
-  nuevo:            { bg: 'rgba(24,93,232,0.10)',    color: '#185de8' },
-  en_proceso:       { bg: 'rgba(245,158,11,0.10)',   color: '#f59e0b' },
-  cerrado:          { bg: 'rgba(132,132,132,0.10)',  color: '#848484' },
-  perdido:          { bg: 'rgba(229,62,62,0.10)',    color: '#e53e3e' },
+  calificado:        { bg: 'rgba(107,221,161,0.10)', color: '#6bdda1' },
+  en_calificacion:   { bg: 'rgba(245,158,11,0.10)',  color: '#f59e0b' },
+  propuesta_enviada: { bg: 'rgba(24,93,232,0.10)',   color: '#185de8' },
+  nuevo:             { bg: 'rgba(59,126,245,0.10)',  color: '#3b7ef5' },
+  en_proceso:        { bg: 'rgba(245,158,11,0.10)',  color: '#f59e0b' },
+  no_responde:       { bg: 'rgba(132,132,132,0.10)', color: '#848484' },
+  cerrado_ganado:    { bg: 'rgba(107,221,161,0.10)', color: '#6bdda1' },
+  cerrado_perdido:   { bg: 'rgba(229,62,62,0.10)',   color: '#e53e3e' },
 };
 
 function formatTime(iso: string) {

@@ -20,12 +20,14 @@ const statusConfig: Record<string, { label: string; color: string; bg: string; b
 };
 
 const stageColors: Record<string, { bg: string; text: string; border: string }> = {
-  calificado:       { bg: 'rgba(107,221,161,0.1)',  text: '#6bdda1', border: 'rgba(107,221,161,0.25)' },
-  en_calificacion:  { bg: 'rgba(245,158,11,0.1)',   text: '#f59e0b', border: 'rgba(245,158,11,0.25)'  },
-  nuevo:            { bg: 'rgba(24,93,232,0.1)',     text: '#185de8', border: 'rgba(24,93,232,0.25)'   },
-  en_proceso:       { bg: 'rgba(245,158,11,0.1)',   text: '#f59e0b', border: 'rgba(245,158,11,0.25)'  },
-  cerrado:          { bg: 'rgba(132,132,132,0.1)',  text: '#848484', border: 'rgba(132,132,132,0.2)'  },
-  perdido:          { bg: 'rgba(229,62,62,0.1)',    text: '#e53e3e', border: 'rgba(229,62,62,0.2)'    },
+  calificado:        { bg: 'rgba(107,221,161,0.1)', text: '#6bdda1', border: 'rgba(107,221,161,0.25)' },
+  en_calificacion:   { bg: 'rgba(245,158,11,0.1)',  text: '#f59e0b', border: 'rgba(245,158,11,0.25)'  },
+  propuesta_enviada: { bg: 'rgba(24,93,232,0.1)',   text: '#185de8', border: 'rgba(24,93,232,0.25)'   },
+  nuevo:             { bg: 'rgba(59,126,245,0.1)',  text: '#3b7ef5', border: 'rgba(59,126,245,0.25)'  },
+  en_proceso:        { bg: 'rgba(245,158,11,0.1)',  text: '#f59e0b', border: 'rgba(245,158,11,0.25)'  },
+  no_responde:       { bg: 'rgba(132,132,132,0.1)', text: '#848484', border: 'rgba(132,132,132,0.2)'  },
+  cerrado_ganado:    { bg: 'rgba(107,221,161,0.1)', text: '#6bdda1', border: 'rgba(107,221,161,0.25)' },
+  cerrado_perdido:   { bg: 'rgba(229,62,62,0.1)',   text: '#e53e3e', border: 'rgba(229,62,62,0.2)'    },
 };
 
 function getStatus(s: string) { return statusConfig[s] ?? statusConfig.pending; }
