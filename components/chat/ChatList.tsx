@@ -53,17 +53,27 @@ function formatTime(iso: string) {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
 }
 
+interface Toast {
+  id: string;
+  lead: AirtableLead;
+  content: string;
+}
+
 export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: ChatListProps) {
   const router = useRouter();
   const [leads, setLeads] = useState<AirtableLead[]>(initialLeads);
   const [newLeadIds, setNewLeadIds] = useState<Set<string>>(new Set());
   const [activeStage, setActiveStage] = useState('all');
   const [selectedLead, setSelectedLead] = useState<AirtableLead | null>(null);
+  const [msgPreviews, setMsgPreviews] = useState<Record<string, LastMessage>>(lastMessages);
   const [seenAt, setSeenAt] = useState<Record<string, string>>({});
+  const [toasts, setToasts] = useState<Toast[]>([]);
   const [search, setSearch] = useState('');
   const [loggingOut, setLoggingOut] = useState(false);
   const leadsRef = useRef(leads);
   leadsRef.current = leads;
+  const selectedLeadRef = useRef(selectedLead);
+  selectedLeadRef.current = selectedLead;
 
   useEffect(() => {
     try {
@@ -72,35 +82,57 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
     } catch { /* empty */ }
   }, []);
 
+  // Realtime: nuevos leads
   useEffect(() => {
     const channel = supabase
       .channel('lead-notifications')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lead_notifications' },
         async (payload) => {
-          console.log('[Realtime] payload recibido:', payload);
           const notifClientId = (payload.new as { client_id?: string }).client_id;
-          if (clientId && notifClientId && notifClientId !== clientId) {
-            console.log('[Realtime] ignorado por clientId distinto:', notifClientId, 'vs', clientId);
-            return;
-          }
+          if (clientId && notifClientId && notifClientId !== clientId) return;
           const res = await fetch('/api/leads');
-          console.log('[Realtime] fetch /api/leads status:', res.status);
           if (!res.ok) return;
           const { leads: fresh } = await res.json() as { leads: AirtableLead[] };
-          console.log('[Realtime] leads frescos:', fresh.length);
           const currentIds = new Set(leadsRef.current.map(l => l.RecordID));
           const added = fresh.filter(l => !currentIds.has(l.RecordID)).map(l => l.RecordID);
           setLeads(fresh);
-          if (added.length > 0) {
-            setNewLeadIds(prev => new Set([...prev, ...added]));
+          if (added.length > 0) setNewLeadIds(prev => new Set([...prev, ...added]));
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [clientId]);
+
+  // Realtime: nuevos mensajes en cualquier lead
+  useEffect(() => {
+    const channel = supabase
+      .channel('new-messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
+        (payload) => {
+          const msg = payload.new as { lead_id: string; role: string; content: string; created_at: string; client_id: string };
+          // Solo mensajes del lead (no bot/agente)
+          if (msg.role !== 'user') return;
+          // Solo leads de este vendedor
+          const lead = leadsRef.current.find(l => l.RecordID === msg.lead_id);
+          if (!lead) return;
+
+          // Actualizar preview del mensaje
+          setMsgPreviews(prev => ({
+            ...prev,
+            [msg.lead_id]: { content: msg.content, role: msg.role, created_at: msg.created_at },
+          }));
+
+          // Toast solo si el chat no está abierto
+          if (selectedLeadRef.current?.RecordID !== msg.lead_id) {
+            const toastId = `${msg.lead_id}-${Date.now()}`;
+            setToasts(prev => [...prev.slice(-2), { id: toastId, lead, content: msg.content }]);
+            setTimeout(() => setToasts(prev => prev.filter(t => t.id !== toastId)), 8000);
           }
         }
       )
-      .subscribe((status, err) => {
-        console.log('[Realtime] status:', status, err ?? '');
-      });
+      .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [clientId]);
+  }, []);
 
   const counts = useMemo(() => {
     const m: Record<string, number> = { all: leads.length };
@@ -328,7 +360,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
             const isNew = newLeadIds.has(lead.RecordID) && !isSelected;
             const badge = STAGE_BADGE[lead.current_stage] ?? STAGE_BADGE['nuevo'];
             const initial = (lead.whatsapp_display_name || lead.name || lead.phone).charAt(0).toUpperCase();
-            const lastMsg = lastMessages[lead.RecordID];
+            const lastMsg = msgPreviews[lead.RecordID];
             const seenTimestamp = seenAt[lead.RecordID];
             const leadWrote = lastMsg?.role === 'user' &&
               (!seenTimestamp || lastMsg.created_at > seenTimestamp);
@@ -470,6 +502,67 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
         )}
       </div>
 
+      {/* ══ Toasts de mensaje nuevo ══ */}
+      <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none' }}>
+        {toasts.map((toast) => {
+          const initial = (toast.lead.whatsapp_display_name || toast.lead.name || toast.lead.phone).charAt(0).toUpperCase();
+          const name = toast.lead.whatsapp_display_name || toast.lead.name || toast.lead.phone;
+          return (
+            <div
+              key={toast.id}
+              style={{ pointerEvents: 'all', animation: 'toastIn 0.25s ease' }}
+            >
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                background: '#12121a', border: '1px solid #2a2a38',
+                borderLeft: '3px solid #f59e0b',
+                borderRadius: 5, padding: '12px 14px',
+                width: 300, cursor: 'pointer',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+              }}
+                onClick={() => {
+                  setSelectedLead(toast.lead);
+                  setActiveStage('all');
+                  setToasts(prev => prev.filter(t => t.id !== toast.id));
+                  const updated = { ...seenAt, [toast.lead.RecordID]: toast.content };
+                  setSeenAt(updated);
+                  localStorage.setItem('scala_seen_leads', JSON.stringify(updated));
+                }}
+              >
+                {/* Avatar */}
+                <div style={{
+                  width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+                  background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 13, fontWeight: 700, color: '#f59e0b', fontFamily: MONO,
+                }}>
+                  {initial}
+                </div>
+                {/* Text */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#e4e4e8' }}>{name}</span>
+                    <span style={{ fontSize: 9, color: '#f59e0b', fontFamily: MONO, fontWeight: 700, letterSpacing: '0.06em' }}>NUEVO</span>
+                  </div>
+                  <p style={{ fontSize: 11, color: '#848484', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {toast.content}
+                  </p>
+                </div>
+                {/* Close */}
+                <button
+                  onClick={e => { e.stopPropagation(); setToasts(prev => prev.filter(t => t.id !== toast.id)); }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#404050', padding: 2, flexShrink: 0, lineHeight: 1 }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       <style>{`
         @keyframes calPulse {
           0%, 100% { box-shadow: 0 0 0 0 rgba(107,221,161,0); }
@@ -482,6 +575,10 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
         @keyframes newBadge {
           0%, 100% { opacity: 1; }
           50%       { opacity: 0.6; }
+        }
+        @keyframes toastIn {
+          from { opacity: 0; transform: translateY(12px); }
+          to   { opacity: 1; transform: translateY(0); }
         }
         input::placeholder { color: #404050; }
         input:focus { border-color: #2a2a38 !important; }
