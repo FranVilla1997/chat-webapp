@@ -78,13 +78,19 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
           table: 'lead_notifications',
         },
         async (payload) => {
+          console.log('[Realtime] payload recibido:', payload);
           // Ignorar notificaciones de otros clientes si tenemos clientId
           const notifClientId = (payload.new as { client_id?: string }).client_id;
-          if (clientId && notifClientId && notifClientId !== clientId) return;
+          if (clientId && notifClientId && notifClientId !== clientId) {
+            console.log('[Realtime] ignorado por clientId distinto:', notifClientId, 'vs', clientId);
+            return;
+          }
 
           const res = await fetch('/api/leads');
+          console.log('[Realtime] fetch /api/leads status:', res.status);
           if (!res.ok) return;
           const { leads: fresh } = await res.json() as { leads: AirtableLead[] };
+          console.log('[Realtime] leads frescos:', fresh.length);
 
           const currentIds = new Set(leadsRef.current.map(l => l.RecordID));
           const added = fresh.filter(l => !currentIds.has(l.RecordID)).map(l => l.RecordID);
@@ -96,7 +102,9 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log('[Realtime] status:', status, err ?? '');
+      });
 
     return () => { supabase.removeChannel(channel); };
   }, [clientId]);
