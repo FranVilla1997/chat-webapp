@@ -47,7 +47,9 @@ export function useMessages(leadId: string, clientId: string) {
           ) {
             setMessages((prev) => {
               const exists = prev.some((m) => String(m.id) === String(newMsg.id));
-              return exists ? prev : [...prev, newMsg];
+              if (exists) return prev;
+              const next = [...prev, newMsg];
+              return next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
             });
           }
         }
