@@ -97,8 +97,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
 
           setLeads(fresh);
           if (added.length > 0) {
-            setNewLeadIds(new Set(added));
-            setTimeout(() => setNewLeadIds(new Set()), 5000);
+            setNewLeadIds(prev => new Set([...prev, ...added]));
           }
         }
       )
@@ -118,7 +117,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
   const calificadosCount = counts['calificado'] ?? 0;
 
   const filtered = useMemo(() => {
-    return leads.filter((l) => {
+    const list = leads.filter((l) => {
       const matchStage = activeStage === 'all' || l.current_stage === activeStage;
       const q = search.toLowerCase();
       const matchSearch = !q ||
@@ -127,7 +126,13 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
         l.name.toLowerCase().includes(q);
       return matchStage && matchSearch;
     });
-  }, [leads, activeStage, search]);
+    // Nuevos leads (recién llegados por realtime) van siempre al tope
+    return list.sort((a, b) => {
+      const aNew = newLeadIds.has(a.RecordID) ? 0 : 1;
+      const bNew = newLeadIds.has(b.RecordID) ? 0 : 1;
+      return aNew - bNew;
+    });
+  }, [leads, activeStage, search, newLeadIds]);
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -337,6 +342,9 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
                 key={lead.RecordID}
                 onClick={() => {
                   setSelectedLead(lead);
+                  if (isNew) {
+                    setNewLeadIds(prev => { const s = new Set(prev); s.delete(lead.RecordID); return s; });
+                  }
                   if (lastMsg) {
                     const updated = { ...seenAt, [lead.RecordID]: lastMsg.created_at };
                     setSeenAt(updated);
