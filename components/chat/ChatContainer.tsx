@@ -86,7 +86,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
       const res = await fetch('/api/update-lead-stage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recordId: leadId, stageRecordId: 'recFnkusjGH5R7p23' }),
+        body: JSON.stringify({ recordId: leadId, stage: 'propuesta_enviada' }),
       });
       if (!res.ok) {
         const { error } = await res.json();
