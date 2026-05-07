@@ -321,7 +321,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
           ) : filtered.map((lead) => {
             const isSelected = selectedLead?.RecordID === lead.RecordID;
             const isCalif = lead.current_stage === 'calificado';
-            const isNew = newLeadIds.has(lead.RecordID);
+            const isNew = newLeadIds.has(lead.RecordID) && !isSelected;
             const badge = STAGE_BADGE[lead.current_stage] ?? STAGE_BADGE['nuevo'];
             const initial = (lead.whatsapp_display_name || lead.name || lead.phone).charAt(0).toUpperCase();
             const lastMsg = lastMessages[lead.RecordID];
@@ -342,9 +342,6 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
                 key={lead.RecordID}
                 onClick={() => {
                   setSelectedLead(lead);
-                  if (isNew) {
-                    setNewLeadIds(prev => { const s = new Set(prev); s.delete(lead.RecordID); return s; });
-                  }
                   if (lastMsg) {
                     const updated = { ...seenAt, [lead.RecordID]: lastMsg.created_at };
                     setSeenAt(updated);
