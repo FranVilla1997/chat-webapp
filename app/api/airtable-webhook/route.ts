@@ -7,8 +7,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const body = await req.json() as { record_id?: string; client_id?: string; action?: string };
-  const { record_id, client_id, action = 'created' } = body;
+  const body = await req.json() as { record_id?: string; client_id?: unknown; action?: string };
+  const { record_id, action = 'created' } = body;
+
+  // Airtable linked record fields come as ["recXXX"] — normalize to plain string
+  let client_id: string | undefined;
+  if (Array.isArray(body.client_id)) {
+    client_id = body.client_id[0] as string;
+  } else if (typeof body.client_id === 'string') {
+    // Handle JSON-stringified array e.g. '["recXXX"]'
+    try {
+      const parsed = JSON.parse(body.client_id);
+      client_id = Array.isArray(parsed) ? parsed[0] : body.client_id;
+    } catch {
+      client_id = body.client_id;
+    }
+  }
 
   if (!record_id || !client_id) {
     return NextResponse.json({ error: 'Missing record_id or client_id' }, { status: 400 });
