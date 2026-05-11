@@ -6,7 +6,7 @@ build
 *.log
 tsconfig.tsbuildinfo
 .DS_Store
-Logo/
-Fuentes/
-RRSS/
-Manual de marca/
+/Logo/
+/Fuentes/
+/RRSS/
+/Manual de marca/

@@ -33,6 +33,23 @@ function parseMeasurements(value?: string): { width?: string; height?: string } 
   return { width: widthMatch?.[1], height: heightMatch?.[1] };
 }
 
+function parseLeadMeasurements(value?: string): { width?: string; height?: string } {
+  if (!value) return {};
+  const normalized = value.replace(',', '.');
+  const directMatch = normalized.match(/(\d+(?:\.\d+)?)\s*(?:cm|m)?\s*(?:ancho|width)?\s*(?:x|por)\s*(\d+(?:\.\d+)?)\s*(?:cm|m)?\s*(?:alto|height)?/i);
+  if (directMatch) return { width: directMatch[1], height: directMatch[2] };
+
+  const widthBeforeLabel = normalized.match(/(\d+(?:\.\d+)?)\s*(?:cm|m)?\s*(?:de\s*)?(?:ancho|width)/i);
+  const heightBeforeLabel = normalized.match(/(\d+(?:\.\d+)?)\s*(?:cm|m)?\s*(?:de\s*)?(?:alto|height)/i);
+  const widthAfterLabel = normalized.match(/(?:ancho|width)\D*(\d+(?:\.\d+)?)/i);
+  const heightAfterLabel = normalized.match(/(?:alto|height)\D*(\d+(?:\.\d+)?)/i);
+
+  return {
+    width: widthBeforeLabel?.[1] ?? widthAfterLabel?.[1],
+    height: heightBeforeLabel?.[1] ?? heightAfterLabel?.[1],
+  };
+}
+
 function normalizeProductForQuote(value?: string): { family?: string; product?: string; fabric?: string } {
   if (!value) return {};
   const text = value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -61,7 +78,7 @@ function buildQuoteUrl(params: { leadPhone: string; instance: string; leadInfo?:
   const url = new URL(QUOTE_APP_URL);
   const query = url.searchParams;
   const product = normalizeProductForQuote(params.leadInfo?.productType);
-  const measurements = parseMeasurements(params.leadInfo?.measurementsInfo);
+  const measurements = parseLeadMeasurements(params.leadInfo?.measurementsInfo);
 
   if (params.leadInfo?.name) query.set('nombre', params.leadInfo.name);
   query.set('telefono', params.leadPhone);
