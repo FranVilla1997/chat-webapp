@@ -12,6 +12,9 @@ export function buildLeadInfoFromAirtable(lead: AirtableLead): LeadInfo {
     stage:  lead.current_stage,
     score:  lead.score,
     phone:  lead.phone,
+    sellerName: lead.vendedor_asignado,
+    productType: lead.tipo_producto,
+    measurementsInfo: lead.medidas_info,
     fields,
   };
 }

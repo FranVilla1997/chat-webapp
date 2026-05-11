@@ -30,6 +30,9 @@ export interface LeadInfo {
   stage?: string;
   score?: string;
   phone?: string;
+  sellerName?: string;
+  productType?: string;
+  measurementsInfo?: string;
   fields?: LeadField[];
 }
 

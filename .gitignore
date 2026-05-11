@@ -5,6 +5,7 @@ node_modules/
 out/
 build/
 *.log
+tsconfig.tsbuildinfo
 
 # OS
 .DS_Store

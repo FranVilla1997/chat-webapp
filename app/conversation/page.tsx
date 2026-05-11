@@ -14,6 +14,13 @@ interface PageProps {
     lead_stage?: string;
     lead_score?: string;
     lead_fields?: string;
+    vendedor?: string;
+    seller?: string;
+    sellerName?: string;
+    producto?: string;
+    product?: string;
+    medidas?: string;
+    measurements?: string;
   };
 }
 
@@ -47,6 +54,9 @@ export default async function ConversationPage({ searchParams }: PageProps) {
         name:   searchParams.lead_name,
         stage:  searchParams.lead_stage,
         score:  searchParams.lead_score,
+        sellerName: searchParams.sellerName ?? searchParams.vendedor ?? searchParams.seller,
+        productType: searchParams.producto ?? searchParams.product,
+        measurementsInfo: searchParams.medidas ?? searchParams.measurements,
         fields: parseLeadFields(searchParams.lead_fields),
       };
 

@@ -20,6 +20,63 @@ interface ChatContainerProps {
   showBack?: boolean;
 }
 
+const QUOTE_APP_URL = process.env.NEXT_PUBLIC_QUOTE_APP_URL ?? 'https://roller-cheaper-quotes.vercel.app/quotes/new';
+
+function parseMeasurements(value?: string): { width?: string; height?: string } {
+  if (!value) return {};
+  const normalized = value.replace(',', '.');
+  const directMatch = normalized.match(/(\d+(?:\.\d+)?)\s*(?:cm|m)?\s*(?:x|×|por)\s*(\d+(?:\.\d+)?)/i);
+  if (directMatch) return { width: directMatch[1], height: directMatch[2] };
+
+  const widthMatch = normalized.match(/(?:ancho|width)\D*(\d+(?:\.\d+)?)/i);
+  const heightMatch = normalized.match(/(?:alto|height)\D*(\d+(?:\.\d+)?)/i);
+  return { width: widthMatch?.[1], height: heightMatch?.[1] };
+}
+
+function normalizeProductForQuote(value?: string): { family?: string; product?: string; fabric?: string } {
+  if (!value) return {};
+  const text = value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  if (text.includes('zebra') || text.includes('eclipse')) {
+    const fabric = text.includes('capri') ? 'CAPRI' : text.includes('monza') ? 'MONZA' : text.includes('cairo') ? 'CAIRO' : undefined;
+    return { family: 'zebra', fabric };
+  }
+  if (text.includes('banda')) return { family: 'bandas_verticales' };
+  if (text.includes('cortinado') || text.includes('cortina')) return { family: 'cortinado' };
+  if (text.includes('devon') && text.includes('trasluc')) return { family: 'roller', product: 'simple_traslucida_devon' };
+  if (text.includes('rustico') && text.includes('black')) return { family: 'roller', product: 'simple_blackout_rustico' };
+  if (text.includes('devon') && text.includes('black')) return { family: 'roller', product: 'simple_blackout_devon' };
+  if (text.includes('premium')) return { family: 'roller', product: 'simple_blackout_premium' };
+  if (text.includes('sunscreen') || text.includes('screen 5')) return { family: 'roller', product: 'simple_sunscreen_5' };
+  if (text.includes('rustico') || text.includes('rustica')) return { family: 'roller', product: 'simple_rustico_3' };
+  if (text.includes('trasluc')) return { family: 'roller', product: 'simple_traslucida' };
+  if (text.includes('mesh')) return { family: 'roller', product: 'simple_mesh_8' };
+  if (text.includes('black')) return { family: 'roller', product: 'simple_blackout_100' };
+  if (text.includes('roller')) return { family: 'roller' };
+
+  return {};
+}
+
+function buildQuoteUrl(params: { leadPhone: string; instance: string; leadInfo?: LeadInfo }): string {
+  const url = new URL(QUOTE_APP_URL);
+  const query = url.searchParams;
+  const product = normalizeProductForQuote(params.leadInfo?.productType);
+  const measurements = parseMeasurements(params.leadInfo?.measurementsInfo);
+
+  if (params.leadInfo?.name) query.set('nombre', params.leadInfo.name);
+  query.set('telefono', params.leadPhone);
+  if (params.leadInfo?.sellerName) query.set('vendedor', params.leadInfo.sellerName);
+  if (params.instance) query.set('instancia', params.instance);
+  if (product.family) query.set('familia', product.family);
+  if (product.product) query.set('producto', product.product);
+  if (product.fabric) query.set('tela', product.fabric);
+  if (measurements.width) query.set('ancho', measurements.width);
+  if (measurements.height) query.set('alto', measurements.height);
+  query.set('cantidad', '1');
+
+  return url.toString();
+}
+
 export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo, showBack }: ChatContainerProps) {
   const router = useRouter();
   const {
@@ -83,18 +140,10 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
     setStageUpdating(true);
     setStageError(null);
     try {
-      const res = await fetch('/api/update-lead-stage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recordId: leadId, stage: 'propuesta_enviada' }),
-      });
-      if (!res.ok) {
-        const { error } = await res.json();
-        throw new Error(error ?? 'Error al actualizar etapa');
-      }
-      setPresupuestoEnviado(true);
+      const quoteUrl = buildQuoteUrl({ leadPhone, instance, leadInfo });
+      window.open(quoteUrl, '_blank', 'noopener,noreferrer');
     } catch (err) {
-      setStageError(err instanceof Error ? err.message : 'Error al actualizar etapa');
+      setStageError(err instanceof Error ? err.message : 'No se pudo abrir el presupuestador');
     } finally {
       setStageUpdating(false);
     }
@@ -187,7 +236,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
                   opacity: stageUpdating ? 0.6 : 1,
                 }}
               >
-                {stageUpdating ? 'Actualizando…' : 'Enviar presupuesto'}
+                {stageUpdating ? 'Abriendo…' : 'Presupuestar'}
               </button>
             )}
 
