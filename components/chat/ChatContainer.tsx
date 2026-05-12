@@ -98,6 +98,10 @@ function rollerProductFromText(value?: string): string | undefined {
   const isSunscreen = text.includes('sunscreen') || text.includes('screen');
   const isDouble = text.includes('doble') || text.includes('sistema doble');
 
+  if (isDouble && !isBlackout && !isSunscreen) {
+    return 'doble_blackout_100_sunscreen_5';
+  }
+
   if (isDouble && isBlackout && isSunscreen) {
     if (text.includes('premium')) return 'doble_blackout_premium_sunscreen_5';
     if (text.includes('devon')) return 'doble_blackout_devon_sunscreen_5';
