@@ -1,10 +1,25 @@
 import type { AirtableLead } from './types';
 
-const BASE_URL = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_LEADS_TABLE_ID}`;
 const HEADERS = {
   Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}`,
   'Content-Type': 'application/json',
 };
+
+export interface AirtableSource {
+  baseId?: string;
+  tableId?: string;
+}
+
+function getBaseUrl(source?: AirtableSource): string {
+  const baseId = source?.baseId || process.env.AIRTABLE_BASE_ID;
+  const tableId = source?.tableId || process.env.AIRTABLE_LEADS_TABLE_ID;
+
+  if (!baseId || !tableId) {
+    throw new Error('Missing Airtable base or table');
+  }
+
+  return `https://api.airtable.com/v0/${baseId}/${tableId}`;
+}
 
 function extractUrl(v: unknown): string {
   if (!v) return '';
@@ -67,13 +82,14 @@ function mapRecord(record: { id: string; fields: Record<string, unknown> }): Air
   };
 }
 
-export async function getLeadsBySellerName(sellerName: string): Promise<AirtableLead[]> {
+export async function getLeadsBySellerName(sellerName: string, source?: AirtableSource): Promise<AirtableLead[]> {
   const leads: AirtableLead[] = [];
   let offset: string | undefined;
+  const baseUrl = getBaseUrl(source);
 
   do {
     const formula = encodeURIComponent(`{Vendedor Asignado}="${sellerName}"`);
-    let url = `${BASE_URL}?filterByFormula=${formula}&pageSize=100&cellFormat=string&timeZone=America%2FArgentina%2FBuenos_Aires&userLocale=es`;
+    let url = `${baseUrl}?filterByFormula=${formula}&pageSize=100&cellFormat=string&timeZone=America%2FArgentina%2FBuenos_Aires&userLocale=es`;
     if (offset) url += `&offset=${offset}`;
 
     const res = await fetch(url, { headers: HEADERS, cache: 'no-store' });
@@ -111,8 +127,8 @@ export async function getLeadsBySellerName(sellerName: string): Promise<Airtable
   });
 }
 
-export async function getLeadById(recordId: string): Promise<AirtableLead | null> {
-  const res = await fetch(`${BASE_URL}/${recordId}`, { headers: HEADERS, cache: 'no-store' });
+export async function getLeadById(recordId: string, source?: AirtableSource): Promise<AirtableLead | null> {
+  const res = await fetch(`${getBaseUrl(source)}/${recordId}`, { headers: HEADERS, cache: 'no-store' });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Airtable error: ${res.status}`);
   const data = await res.json() as { id: string; fields: Record<string, unknown> };
@@ -120,7 +136,7 @@ export async function getLeadById(recordId: string): Promise<AirtableLead | null
 }
 
 export async function updateLeadFields(recordId: string, fields: Record<string, unknown>): Promise<void> {
-  const res = await fetch(`${BASE_URL}/${recordId}`, {
+  const res = await fetch(`${getBaseUrl()}/${recordId}`, {
     method: 'PATCH',
     headers: HEADERS,
     body: JSON.stringify({ fields }),

@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { getLeadsBySellerName } from '@/lib/airtable';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const supabase = createSupabaseServerClient();
   const { data: { session } } = await supabase.auth.getSession();
 
@@ -20,6 +20,10 @@ export async function GET() {
     return NextResponse.json({ leads: [], clientId: profile?.client_id ?? '' });
   }
 
-  const leads = await getLeadsBySellerName(profile.airtable_seller_name);
+  const { searchParams } = new URL(req.url);
+  const leads = await getLeadsBySellerName(profile.airtable_seller_name, {
+    baseId: searchParams.get('airtable_base_id') ?? searchParams.get('base_id') ?? undefined,
+    tableId: searchParams.get('airtable_table_id') ?? searchParams.get('table_id') ?? undefined,
+  });
   return NextResponse.json({ leads, clientId: profile.client_id });
 }

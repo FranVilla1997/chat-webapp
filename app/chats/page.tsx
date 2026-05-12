@@ -9,7 +9,16 @@ export interface LastMessage {
   created_at: string;
 }
 
-export default async function ChatsPage() {
+interface ChatsPageProps {
+  searchParams: {
+    airtable_base_id?: string;
+    airtable_table_id?: string;
+    base_id?: string;
+    table_id?: string;
+  };
+}
+
+export default async function ChatsPage({ searchParams }: ChatsPageProps) {
   const supabase = createSupabaseServerClient();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) redirect('/login');
@@ -22,8 +31,12 @@ export default async function ChatsPage() {
 
   if (!profile) redirect('/login');
 
+  const airtableBaseId = searchParams.airtable_base_id ?? searchParams.base_id;
+  const airtableTableId = searchParams.airtable_table_id ?? searchParams.table_id;
+  const airtableSource = { baseId: airtableBaseId, tableId: airtableTableId };
+
   const leads = profile.airtable_seller_name
-    ? await getLeadsBySellerName(profile.airtable_seller_name)
+    ? await getLeadsBySellerName(profile.airtable_seller_name, airtableSource)
     : [];
 
   // Traer el último mensaje de Supabase para cada lead en una sola query
@@ -57,6 +70,8 @@ export default async function ChatsPage() {
       sellerName={profile.name}
       clientId={profile.client_id}
       lastMessages={lastMessages}
+      airtableBaseId={airtableBaseId}
+      airtableTableId={airtableTableId}
     />
   );
 }

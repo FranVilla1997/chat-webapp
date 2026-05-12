@@ -14,6 +14,8 @@ interface ChatListProps {
   sellerName: string | null;
   clientId: string;
   lastMessages: Record<string, LastMessage>;
+  airtableBaseId?: string;
+  airtableTableId?: string;
 }
 
 const MONO = `'SF Mono', 'Consolas', 'Liberation Mono', monospace`;
@@ -59,7 +61,7 @@ interface Toast {
   content: string;
 }
 
-export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: ChatListProps) {
+export function ChatList({ initialLeads, sellerName, clientId, lastMessages, airtableBaseId, airtableTableId }: ChatListProps) {
   const router = useRouter();
   const [leads, setLeads] = useState<AirtableLead[]>(initialLeads);
   const [newLeadIds, setNewLeadIds] = useState<Set<string>>(new Set());
@@ -90,7 +92,10 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
         async (payload) => {
           const notifClientId = (payload.new as { client_id?: string }).client_id;
           if (clientId && notifClientId && notifClientId !== clientId) return;
-          const res = await fetch('/api/leads');
+          const params = new URLSearchParams();
+          if (airtableBaseId) params.set('airtable_base_id', airtableBaseId);
+          if (airtableTableId) params.set('airtable_table_id', airtableTableId);
+          const res = await fetch(`/api/leads${params.size ? `?${params.toString()}` : ''}`);
           if (!res.ok) return;
           const { leads: fresh } = await res.json() as { leads: AirtableLead[] };
           const currentIds = new Set(leadsRef.current.map(l => l.RecordID));
@@ -101,7 +106,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages }: C
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [clientId]);
+  }, [clientId, airtableBaseId, airtableTableId]);
 
   // Realtime: nuevos mensajes en cualquier lead
   useEffect(() => {
