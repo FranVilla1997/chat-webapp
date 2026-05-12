@@ -22,6 +22,17 @@ interface ChatContainerProps {
 
 const QUOTE_APP_URL = process.env.NEXT_PUBLIC_QUOTE_APP_URL ?? 'https://roller-cheaper-quotes.vercel.app/quotes/new';
 
+type QuoteUrlItem = {
+  familia: string;
+  producto?: string;
+  tela?: string;
+  ancho: string;
+  alto: string;
+  cantidad: string;
+  unidadAncho: 'cm';
+  unidadAlto: 'cm';
+};
+
 function parseMeasurements(value?: string): { width?: string; height?: string } {
   if (!value) return {};
   const normalized = value.replace(',', '.');
@@ -50,9 +61,16 @@ function parseLeadMeasurements(value?: string): { width?: string; height?: strin
   };
 }
 
+function normalizeText(value?: string): string {
+  return (value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
 function normalizeProductForQuote(value?: string): { family?: string; product?: string; fabric?: string } {
   if (!value) return {};
-  const text = value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const text = normalizeText(value);
 
   if (text.includes('zebra') || text.includes('eclipse')) {
     const fabric = text.includes('capri') ? 'CAPRI' : text.includes('monza') ? 'MONZA' : text.includes('cairo') ? 'CAIRO' : undefined;
@@ -74,11 +92,81 @@ function normalizeProductForQuote(value?: string): { family?: string; product?: 
   return {};
 }
 
+function rollerProductFromText(value?: string): string | undefined {
+  const text = normalizeText(value);
+  const isBlackout = text.includes('blackout') || text.includes('black out') || text.includes('black');
+  const isSunscreen = text.includes('sunscreen') || text.includes('screen');
+  const isDouble = text.includes('doble') || text.includes('sistema doble');
+
+  if (isDouble && isBlackout && isSunscreen) {
+    if (text.includes('premium')) return 'doble_blackout_premium_sunscreen_5';
+    if (text.includes('devon')) return 'doble_blackout_devon_sunscreen_5';
+    if (text.includes('rustico') || text.includes('rustica')) return 'doble_blackout_rustico_sunscreen_5';
+    return 'doble_blackout_100_sunscreen_5';
+  }
+
+  if (isDouble && isBlackout) {
+    if (text.includes('premium')) return 'doble_blackout_premium_sunscreen_5';
+    if (text.includes('devon')) return 'doble_blackout_devon_sunscreen_5';
+    if (text.includes('rustico') || text.includes('rustica')) return 'doble_blackout_rustico_sunscreen_5';
+    return 'doble_blackout_100_sunscreen_5';
+  }
+
+  if (isSunscreen) return 'simple_sunscreen_5';
+  if (text.includes('premium')) return 'simple_blackout_premium';
+  if (text.includes('devon') && isBlackout) return 'simple_blackout_devon';
+  if ((text.includes('rustico') || text.includes('rustica')) && isBlackout) return 'simple_blackout_rustico';
+  if (text.includes('mesh')) return 'simple_mesh_8';
+  if (isBlackout) return 'simple_blackout_100';
+  return undefined;
+}
+
+function parseMeasurementItems(measurementsInfo?: string, productType?: string): QuoteUrlItem[] {
+  if (!measurementsInfo) return [];
+
+  const normalized = measurementsInfo.replace(/×/g, 'x').replace(/,/g, '.');
+  const labelPattern = /(sistema\s+doble|solo\s+sunscreen|sunscreen|blackout|black\s*out|zebra|eclipse|bandas?|cortinado|cortina)\s*:/gi;
+  const labels = [...normalized.matchAll(labelPattern)];
+  const chunks = labels.length
+    ? labels.map((label, index) => ({
+        title: label[1],
+        body: normalized.slice(label.index! + label[0].length, labels[index + 1]?.index ?? normalized.length),
+      }))
+    : [{ title: productType ?? '', body: normalized }];
+
+  const items: QuoteUrlItem[] = [];
+
+  for (const chunk of chunks) {
+    const context = `${chunk.title} ${chunk.body} ${productType ?? ''}`;
+    const product = normalizeProductForQuote(context);
+    const rollerProduct = product.family === 'roller' || !product.family ? rollerProductFromText(context) : undefined;
+    const family = product.family ?? (rollerProduct ? 'roller' : undefined);
+    if (!family) continue;
+
+    const measurePattern = /(?:(\d+)\s*(?:de|x|u|un|unidades?)\s*)?(\d+(?:\.\d+)?)\s*(?:cm|m)?\s*x\s*(\d+(?:\.\d+)?)\s*(?:cm|m)?/gi;
+    for (const match of chunk.body.matchAll(measurePattern)) {
+      items.push({
+        familia: family,
+        producto: rollerProduct ?? product.product,
+        tela: product.fabric,
+        ancho: match[2],
+        alto: match[3],
+        cantidad: match[1] ?? '1',
+        unidadAncho: 'cm',
+        unidadAlto: 'cm',
+      });
+    }
+  }
+
+  return items;
+}
+
 function buildQuoteUrl(params: { leadPhone: string; instance: string; leadInfo?: LeadInfo }): string {
   const url = new URL(QUOTE_APP_URL);
   const query = url.searchParams;
   const product = normalizeProductForQuote(params.leadInfo?.productType);
   const measurements = parseLeadMeasurements(params.leadInfo?.measurementsInfo);
+  const measurementItems = parseMeasurementItems(params.leadInfo?.measurementsInfo, params.leadInfo?.productType);
 
   if (params.leadInfo?.name) query.set('nombre', params.leadInfo.name);
   query.set('telefono', params.leadPhone);
@@ -87,9 +175,13 @@ function buildQuoteUrl(params: { leadPhone: string; instance: string; leadInfo?:
   if (product.family) query.set('familia', product.family);
   if (product.product) query.set('producto', product.product);
   if (product.fabric) query.set('tela', product.fabric);
-  if (measurements.width) query.set('ancho', measurements.width);
-  if (measurements.height) query.set('alto', measurements.height);
-  query.set('cantidad', '1');
+  if (measurementItems.length) {
+    query.set('items', JSON.stringify(measurementItems));
+  } else {
+    if (measurements.width) query.set('ancho', measurements.width);
+    if (measurements.height) query.set('alto', measurements.height);
+    query.set('cantidad', '1');
+  }
 
   return url.toString();
 }
