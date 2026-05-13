@@ -14,8 +14,8 @@ export async function POST(req: NextRequest) {
     }
 
     await updateLeadFields(recordId, {
-      bot_paused_at: '',
-      bot_resume_at: '',
+      bot_paused_at: null,
+      bot_resume_at: null,
       bot_paused_by: '',
     });
 
