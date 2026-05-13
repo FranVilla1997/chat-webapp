@@ -15,6 +15,9 @@ export function buildLeadInfoFromAirtable(lead: AirtableLead): LeadInfo {
     sellerName: lead.vendedor_asignado,
     productType: lead.tipo_producto,
     measurementsInfo: lead.medidas_info,
+    botPausedAt: lead.bot_paused_at,
+    botResumeAt: lead.bot_resume_at,
+    botPausedBy: lead.bot_paused_by,
     fields,
   };
 }

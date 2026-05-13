@@ -10,6 +10,7 @@ import { ChatHeader } from './ChatHeader';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { LeadPanel } from './LeadPanel';
+import { BotPauseControl } from './BotPauseControl';
 import type { LeadInfo } from '@/lib/types';
 
 interface ChatContainerProps {
@@ -346,6 +347,8 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
   const bottomRef = useRef<HTMLDivElement>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [presupuestoEnviado, setPresupuestoEnviado] = useState(false);
+  const [botResumeAt, setBotResumeAt] = useState(leadInfo?.botResumeAt ?? '');
+  const [pauseBusy, setPauseBusy] = useState(false);
   const hasLeadInfo = !!(leadInfo?.name || leadInfo?.stage || leadInfo?.score || leadInfo?.fields?.length);
 
   const isCalificado = leadInfo?.stage?.toLowerCase() === 'calificado';
@@ -365,6 +368,25 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
 
   function handlePresupuestoEnviado() {
     alert('Bot activado y haciendo seguimiento');
+  }
+
+  async function pauseBot(resumeAt: string) {
+    setPauseBusy(true);
+    setStageError(null);
+    try {
+      const response = await fetch('/api/pause-bot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recordId: leadId, resumeAt }),
+      });
+      const result = await response.json() as { error?: string; botResumeAt?: string };
+      if (!response.ok) throw new Error(result.error ?? 'No se pudo pausar el bot');
+      setBotResumeAt(result.botResumeAt ?? resumeAt);
+    } catch (err) {
+      setStageError(err instanceof Error ? err.message : 'No se pudo pausar el bot');
+    } finally {
+      setPauseBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -472,6 +494,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
               </button>
             )}
             <style>{`@keyframes presupuestoPulse { 0%,100%{box-shadow:0 0 0 0 rgba(107,221,161,0)} 50%{box-shadow:0 0 0 6px rgba(107,221,161,0.25)} }`}</style>
+            <BotPauseControl recordId={leadId} initialResumeAt={botResumeAt} onPause={pauseBot} busy={pauseBusy} />
           </div>
 
           <div style={{

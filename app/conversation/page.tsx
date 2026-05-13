@@ -21,6 +21,9 @@ interface PageProps {
     product?: string;
     medidas?: string;
     measurements?: string;
+    bot_resume_at?: string;
+    bot_paused_at?: string;
+    bot_paused_by?: string;
   };
 }
 
@@ -57,6 +60,9 @@ export default async function ConversationPage({ searchParams }: PageProps) {
         sellerName: searchParams.sellerName ?? searchParams.vendedor ?? searchParams.seller,
         productType: searchParams.producto ?? searchParams.product,
         measurementsInfo: searchParams.medidas ?? searchParams.measurements,
+        botResumeAt: searchParams.bot_resume_at,
+        botPausedAt: searchParams.bot_paused_at,
+        botPausedBy: searchParams.bot_paused_by,
         fields: parseLeadFields(searchParams.lead_fields),
       };
 

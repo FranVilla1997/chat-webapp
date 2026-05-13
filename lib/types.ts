@@ -33,6 +33,9 @@ export interface LeadInfo {
   sellerName?: string;
   productType?: string;
   measurementsInfo?: string;
+  botPausedAt?: string;
+  botResumeAt?: string;
+  botPausedBy?: string;
   fields?: LeadField[];
 }
 
