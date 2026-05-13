@@ -29,8 +29,8 @@ type QuoteUrlItem = {
   ancho: string;
   alto: string;
   cantidad: string;
-  unidadAncho: 'cm';
-  unidadAlto: 'cm';
+  unidadAncho: 'cm' | 'm';
+  unidadAlto: 'cm' | 'm';
 };
 
 function parseMeasurements(value?: string): { width?: string; height?: string } {
@@ -44,20 +44,48 @@ function parseMeasurements(value?: string): { width?: string; height?: string } 
   return { width: widthMatch?.[1], height: heightMatch?.[1] };
 }
 
-function parseLeadMeasurements(value?: string): { width?: string; height?: string } {
-  if (!value) return {};
-  const normalized = value.replace(',', '.');
-  const directMatch = normalized.match(/(\d+(?:\.\d+)?)\s*(?:cm|m)?\s*(?:ancho|width)?\s*(?:x|por)\s*(\d+(?:\.\d+)?)\s*(?:cm|m)?\s*(?:alto|height)?/i);
-  if (directMatch) return { width: directMatch[1], height: directMatch[2] };
+function normalizeMeasureValue(value: string): string {
+  return value.trim().replace(',', '.');
+}
 
-  const widthBeforeLabel = normalized.match(/(\d+(?:\.\d+)?)\s*(?:cm|m)?\s*(?:de\s*)?(?:ancho|width)/i);
-  const heightBeforeLabel = normalized.match(/(\d+(?:\.\d+)?)\s*(?:cm|m)?\s*(?:de\s*)?(?:alto|height)/i);
-  const widthAfterLabel = normalized.match(/(?:ancho|width)\D*(\d+(?:\.\d+)?)/i);
-  const heightAfterLabel = normalized.match(/(?:alto|height)\D*(\d+(?:\.\d+)?)/i);
+function inferMeasureUnit(value: string, explicitUnit?: string): 'cm' | 'm' {
+  const unit = explicitUnit?.toLowerCase();
+  if (unit?.startsWith('m')) return 'm';
+  if (unit === 'cm') return 'cm';
+
+  const normalized = normalizeMeasureValue(value);
+  const parsed = Number(normalized);
+  if (Number.isFinite(parsed) && parsed > 0 && parsed <= 20 && /[,.]/.test(value)) return 'm';
+  return 'cm';
+}
+
+function parseLeadMeasurements(value?: string): { width?: string; height?: string; widthUnit?: 'cm' | 'm'; heightUnit?: 'cm' | 'm' } {
+  if (!value) return {};
+  const normalized = value.replace(/×|Ã—/g, 'x');
+  const directMatch = normalized.match(/(\d+(?:[.,]\d+)?)\s*(cm|m|mts?|metros?)?\s*(?:ancho|width)?\s*(?:x|por)\s*(\d+(?:[.,]\d+)?)\s*(cm|m|mts?|metros?)?\s*(?:alto|height)?/i);
+  if (directMatch) {
+    return {
+      width: normalizeMeasureValue(directMatch[1]),
+      height: normalizeMeasureValue(directMatch[3]),
+      widthUnit: inferMeasureUnit(directMatch[1], directMatch[2]),
+      heightUnit: inferMeasureUnit(directMatch[3], directMatch[4]),
+    };
+  }
+
+  const widthBeforeLabel = normalized.match(/(\d+(?:[.,]\d+)?)\s*(cm|m|mts?|metros?)?\s*(?:de\s*)?(?:ancho|width)/i);
+  const heightBeforeLabel = normalized.match(/(\d+(?:[.,]\d+)?)\s*(cm|m|mts?|metros?)?\s*(?:de\s*)?(?:alto|height)/i);
+  const widthAfterLabel = normalized.match(/(?:ancho|width)\D*(\d+(?:[.,]\d+)?)(?:\s*(cm|m|mts?|metros?))?/i);
+  const heightAfterLabel = normalized.match(/(?:alto|height)\D*(\d+(?:[.,]\d+)?)(?:\s*(cm|m|mts?|metros?))?/i);
+  const width = widthBeforeLabel?.[1] ?? widthAfterLabel?.[1];
+  const height = heightBeforeLabel?.[1] ?? heightAfterLabel?.[1];
+  const widthUnit = widthBeforeLabel?.[2] ?? widthAfterLabel?.[2];
+  const heightUnit = heightBeforeLabel?.[2] ?? heightAfterLabel?.[2];
 
   return {
-    width: widthBeforeLabel?.[1] ?? widthAfterLabel?.[1],
-    height: heightBeforeLabel?.[1] ?? heightAfterLabel?.[1],
+    width: width ? normalizeMeasureValue(width) : undefined,
+    height: height ? normalizeMeasureValue(height) : undefined,
+    widthUnit: width ? inferMeasureUnit(width, widthUnit) : undefined,
+    heightUnit: height ? inferMeasureUnit(height, heightUnit) : undefined,
   };
 }
 
@@ -147,17 +175,17 @@ function parseMeasurementItems(measurementsInfo?: string, productType?: string):
     const family = product.family ?? (rollerProduct ? 'roller' : undefined);
     if (!family) continue;
 
-    const measurePattern = /(?:(\d+)\s*(?:de|x|u|un|unidades?)\s*)?(\d+(?:\.\d+)?)\s*(?:cm|m)?\s*x\s*(\d+(?:\.\d+)?)\s*(?:cm|m)?/gi;
+    const measurePattern = /(?:(\d+)\s*(?:de|x|u|un|unidades?)\s*)?(\d+(?:\.\d+)?)\s*(cm|m|mts?|metros?)?\s*x\s*(\d+(?:\.\d+)?)\s*(cm|m|mts?|metros?)?/gi;
     for (const match of chunk.body.matchAll(measurePattern)) {
       items.push({
         familia: family,
         producto: rollerProduct ?? product.product,
         tela: product.fabric,
         ancho: match[2],
-        alto: match[3],
+        alto: match[4],
         cantidad: match[1] ?? '1',
-        unidadAncho: 'cm',
-        unidadAlto: 'cm',
+        unidadAncho: inferMeasureUnit(match[2], match[3]),
+        unidadAlto: inferMeasureUnit(match[4], match[5]),
       });
     }
   }
@@ -184,6 +212,8 @@ function buildQuoteUrl(params: { leadPhone: string; instance: string; leadInfo?:
   } else {
     if (measurements.width) query.set('ancho', measurements.width);
     if (measurements.height) query.set('alto', measurements.height);
+    if (measurements.widthUnit) query.set('unidadAncho', measurements.widthUnit);
+    if (measurements.heightUnit) query.set('unidadAlto', measurements.heightUnit);
     query.set('cantidad', '1');
   }
 
