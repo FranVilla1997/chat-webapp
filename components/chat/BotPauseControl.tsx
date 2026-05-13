@@ -6,6 +6,7 @@ interface BotPauseControlProps {
   recordId: string;
   initialResumeAt?: string;
   onPause: (resumeAt: string) => Promise<void>;
+  onResume: () => Promise<void>;
   busy?: boolean;
 }
 
@@ -33,7 +34,7 @@ function formatRemaining(ms: number) {
   return `${days}d ${hours}h ${minutes}m`;
 }
 
-export function BotPauseControl({ recordId, initialResumeAt, onPause, busy }: BotPauseControlProps) {
+export function BotPauseControl({ recordId, initialResumeAt, onPause, onResume, busy }: BotPauseControlProps) {
   const [open, setOpen] = useState(false);
   const [resumeAt, setResumeAt] = useState(initialResumeAt ?? '');
   const [customValue, setCustomValue] = useState(toLocalDatetimeValue(new Date(Date.now() + 60 * 60 * 1000)));
@@ -64,6 +65,11 @@ export function BotPauseControl({ recordId, initialResumeAt, onPause, busy }: Bo
     setOpen(false);
   }
 
+  async function resumeBot() {
+    await onResume();
+    setResumeAt('');
+  }
+
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -77,21 +83,39 @@ export function BotPauseControl({ recordId, initialResumeAt, onPause, busy }: Bo
             Bot pausado {formatRemaining(remainingMs)}
           </span>
         )}
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          disabled={busy}
-          style={{
-            padding: '7px 14px', borderRadius: 5,
-            border: '1px solid rgba(245,158,11,0.35)',
-            background: 'rgba(245,158,11,0.08)',
-            color: '#fbbf24', fontSize: 11, fontWeight: 700,
-            cursor: busy ? 'not-allowed' : 'pointer',
-            letterSpacing: '0.06em', textTransform: 'uppercase',
-          }}
-        >
-          {busy ? 'Pausando...' : 'Pausar bot'}
-        </button>
+        {isPaused ? (
+          <button
+            type="button"
+            onClick={() => void resumeBot()}
+            disabled={busy}
+            style={{
+              padding: '7px 14px', borderRadius: 5,
+              border: '1px solid rgba(107,221,161,0.45)',
+              background: 'rgba(107,221,161,0.08)',
+              color: '#6bdda1', fontSize: 11, fontWeight: 700,
+              cursor: busy ? 'not-allowed' : 'pointer',
+              letterSpacing: '0.06em', textTransform: 'uppercase',
+            }}
+          >
+            {busy ? 'Reanudando...' : 'Reanudar bot'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            disabled={busy}
+            style={{
+              padding: '7px 14px', borderRadius: 5,
+              border: '1px solid rgba(245,158,11,0.35)',
+              background: 'rgba(245,158,11,0.08)',
+              color: '#fbbf24', fontSize: 11, fontWeight: 700,
+              cursor: busy ? 'not-allowed' : 'pointer',
+              letterSpacing: '0.06em', textTransform: 'uppercase',
+            }}
+          >
+            {busy ? 'Pausando...' : 'Pausar bot'}
+          </button>
+        )}
       </div>
 
       {open && (

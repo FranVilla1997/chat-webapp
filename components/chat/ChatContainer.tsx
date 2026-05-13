@@ -389,6 +389,25 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
     }
   }
 
+  async function resumeBot() {
+    setPauseBusy(true);
+    setStageError(null);
+    try {
+      const response = await fetch('/api/resume-bot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recordId: leadId }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? 'No se pudo reanudar el bot');
+      setBotResumeAt('');
+    } catch (err) {
+      setStageError(err instanceof Error ? err.message : 'No se pudo reanudar el bot');
+    } finally {
+      setPauseBusy(false);
+    }
+  }
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -494,7 +513,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
               </button>
             )}
             <style>{`@keyframes presupuestoPulse { 0%,100%{box-shadow:0 0 0 0 rgba(107,221,161,0)} 50%{box-shadow:0 0 0 6px rgba(107,221,161,0.25)} }`}</style>
-            <BotPauseControl recordId={leadId} initialResumeAt={botResumeAt} onPause={pauseBot} busy={pauseBusy} />
+            <BotPauseControl recordId={leadId} initialResumeAt={botResumeAt} onPause={pauseBot} onResume={resumeBot} busy={pauseBusy} />
           </div>
 
           <div style={{
