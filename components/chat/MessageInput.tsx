@@ -5,6 +5,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 interface MessageInputProps {
   onSend: (text: string) => void;
   onSendAudio: (base64: string, duration: number) => void;
+  onSendFile: (file: File, caption?: string) => void;
   disabled?: boolean;
   sending?: boolean;
 }
@@ -39,13 +40,15 @@ function WaveformBars() {
   );
 }
 
-export function MessageInput({ onSend, onSendAudio, disabled, sending }: MessageInputProps) {
+export function MessageInput({ onSend, onSendAudio, onSendFile, disabled, sending }: MessageInputProps) {
   const [text, setText] = useState('');
   const [focused, setFocused] = useState(false);
   const [recording, setRecording] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
 
   const textareaRef   = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef  = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioChunks   = useRef<Blob[]>([]);
   const streamRef     = useRef<MediaStream | null>(null);
@@ -70,6 +73,28 @@ export function MessageInput({ onSend, onSendAudio, disabled, sending }: Message
     setText(e.target.value);
     const el = textareaRef.current;
     if (el) { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 130)}px`; }
+  }
+
+  function handlePickFile(event: React.ChangeEvent<HTMLInputElement>) {
+    setFileError(null);
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && file.type !== 'application/pdf') {
+      setFileError('Solo podés adjuntar fotos, videos o PDF');
+      return;
+    }
+
+    if (file.size > 50 * 1024 * 1024) {
+      setFileError('El archivo no puede superar 50 MB');
+      return;
+    }
+
+    const caption = text.trim();
+    onSendFile(file, caption || undefined);
+    setText('');
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
   }
 
   /* ── Audio recording ─────────────────────── */
@@ -188,6 +213,30 @@ export function MessageInput({ onSend, onSendAudio, disabled, sending }: Message
         transition: 'border-color 0.2s, box-shadow 0.2s',
         boxShadow: focused ? '0 0 0 3px rgba(24,93,232,0.1)' : 'none',
       }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/*,application/pdf"
+          onChange={handlePickFile}
+          style={{ display: 'none' }}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled || sending}
+          title="Adjuntar foto, video o PDF"
+          style={{
+            width: 36, height: 36, borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)',
+            cursor: disabled || sending ? 'not-allowed' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0, background: 'rgba(255,255,255,0.06)',
+            color: 'rgba(255,255,255,0.55)', transition: 'all 0.2s',
+          }}
+        >
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M4.5 3.5a3 3 0 0 1 6 0v7a2.5 2.5 0 0 1-5 0v-6a1 1 0 0 1 2 0v6a.5.5 0 0 0 1 0v-6a2 2 0 1 0-4 0v6a3.5 3.5 0 0 0 7 0v-7a4 4 0 0 0-8 0v7a.5.5 0 0 1-1 0z"/>
+          </svg>
+        </button>
         <textarea
           ref={textareaRef}
           value={text}
@@ -251,6 +300,9 @@ export function MessageInput({ onSend, onSendAudio, disabled, sending }: Message
 
       {audioError && (
         <p style={{ fontSize: 11, color: '#f87171', marginTop: 6, paddingLeft: 2 }}>{audioError}</p>
+      )}
+      {fileError && (
+        <p style={{ fontSize: 11, color: '#f87171', marginTop: 6, paddingLeft: 2 }}>{fileError}</p>
       )}
 
       <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 7, paddingLeft: 2 }}>

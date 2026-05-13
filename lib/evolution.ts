@@ -56,3 +56,40 @@ export async function sendWhatsAppAudio(
     throw new Error(`Evolution API audio error ${response.status}: ${body}`);
   }
 }
+
+export type WhatsAppMediaType = 'image' | 'video' | 'document';
+
+export async function sendWhatsAppMedia(
+  instance: string,
+  number: string,
+  input: {
+    mediaUrl: string;
+    mediaType: WhatsAppMediaType;
+    mimeType: string;
+    fileName: string;
+    caption?: string;
+  }
+): Promise<void> {
+  const baseUrl = process.env.EVOLUTION_API_URL;
+  const apiKey = process.env.EVOLUTION_API_KEY;
+
+  if (!baseUrl || !apiKey) throw new Error('Evolution API not configured');
+
+  const response = await fetch(`${baseUrl}/message/sendMedia/${encodeURIComponent(instance)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: apiKey },
+    body: JSON.stringify({
+      number,
+      mediatype: input.mediaType,
+      mimetype: input.mimeType,
+      media: input.mediaUrl,
+      fileName: input.fileName,
+      caption: input.caption ?? '',
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Evolution API media error ${response.status}: ${body}`);
+  }
+}

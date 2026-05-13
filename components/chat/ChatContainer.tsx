@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@supabase/supabase-js';
 import { useMessages } from '@/hooks/useMessages';
 import { useSendMessage } from '@/hooks/useSendMessage';
 import { useFollowups } from '@/hooks/useFollowups';
@@ -21,6 +22,10 @@ interface ChatContainerProps {
 }
 
 const QUOTE_APP_URL = process.env.NEXT_PUBLIC_QUOTE_APP_URL ?? 'https://roller-cheaper-quotes.vercel.app/quotes/new';
+const supabaseBrowser = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 type QuoteUrlItem = {
   familia: string;
@@ -235,6 +240,8 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
 
   const [audioSending, setAudioSending] = useState(false);
   const [audioError, setAudioError]     = useState<string | null>(null);
+  const [fileSending, setFileSending]   = useState(false);
+  const [fileError, setFileError]       = useState<string | null>(null);
   const [stageUpdating, setStageUpdating] = useState(false);
   const [stageError, setStageError]       = useState<string | null>(null);
 
@@ -267,6 +274,70 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
       setAudioError(err instanceof Error ? err.message : 'Error al enviar audio');
     } finally {
       setAudioSending(false);
+    }
+  }
+
+  async function handleSendFile(file: File, caption?: string) {
+    setFileSending(true);
+    setFileError(null);
+
+    const kind = file.type.startsWith('image/') ? 'Foto' : file.type.startsWith('video/') ? 'Video' : 'Archivo';
+    const tempId = `temp-${Date.now()}`;
+    addOptimisticMessage({
+      id: tempId,
+      lead_id: leadId,
+      client_id: clientId,
+      role: 'human_agent',
+      content: caption ? `${kind}: ${caption}` : `${kind} enviado: ${file.name}`,
+      was_audio: false,
+      created_at: new Date().toISOString(),
+    });
+
+    try {
+      const uploadUrlRes = await fetch('/api/send-file/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId,
+          clientId,
+          fileName: file.name,
+          mimeType: file.type,
+        }),
+      });
+      if (!uploadUrlRes.ok) {
+        const { error } = await uploadUrlRes.json();
+        throw new Error(error ?? 'Error al preparar archivo');
+      }
+      const upload = await uploadUrlRes.json() as { bucket: string; path: string; token: string };
+      const { error: uploadError } = await supabaseBrowser.storage
+        .from(upload.bucket)
+        .uploadToSignedUrl(upload.path, upload.token, file);
+      if (uploadError) throw new Error(uploadError.message);
+
+      const res = await fetch('/api/send-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadPhone,
+          leadId,
+          clientId,
+          instance,
+          caption: caption ?? '',
+          storagePath: upload.path,
+          fileName: file.name,
+          mimeType: file.type,
+        }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json();
+        throw new Error(error ?? 'Error al enviar archivo');
+      }
+      const { message } = await res.json();
+      replaceOptimisticMessage(tempId, message);
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : 'Error al enviar archivo');
+    } finally {
+      setFileSending(false);
     }
   }
 
@@ -426,16 +497,17 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
             <div ref={bottomRef} style={{ height: 8 }} />
           </div>
 
-          {(sendError || audioError || stageError) && (
+          {(sendError || audioError || fileError || stageError) && (
             <div style={{ padding: '8px 24px', background: 'rgba(229,62,62,0.06)', borderTop: '1px solid rgba(229,62,62,0.15)' }}>
-              <p style={{ fontSize: 11, color: '#e53e3e' }}>{sendError || audioError || stageError}</p>
+              <p style={{ fontSize: 11, color: '#e53e3e' }}>{sendError || audioError || fileError || stageError}</p>
             </div>
           )}
 
           <MessageInput
             onSend={sendMessage}
             onSendAudio={handleSendAudio}
-            sending={sending || audioSending}
+            onSendFile={handleSendFile}
+            sending={sending || audioSending || fileSending}
           />
         </div>
 
