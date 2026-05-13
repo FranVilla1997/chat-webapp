@@ -199,7 +199,7 @@ function parseMeasurementItems(measurementsInfo?: string, productType?: string):
   return items;
 }
 
-function buildQuoteUrl(params: { leadPhone: string; instance: string; leadInfo?: LeadInfo }): string {
+function buildQuoteUrl(params: { leadPhone: string; leadId: string; clientId: string; instance: string; leadInfo?: LeadInfo }): string {
   const url = new URL(QUOTE_APP_URL);
   const query = url.searchParams;
   const product = normalizeProductForQuote(params.leadInfo?.productType);
@@ -208,6 +208,8 @@ function buildQuoteUrl(params: { leadPhone: string; instance: string; leadInfo?:
 
   if (params.leadInfo?.name) query.set('nombre', params.leadInfo.name);
   query.set('telefono', params.leadPhone);
+  if (params.leadId) query.set('leadId', params.leadId);
+  if (params.clientId) query.set('clientId', params.clientId);
   if (params.leadInfo?.sellerName) query.set('vendedor', params.leadInfo.sellerName);
   if (params.instance) query.set('instancia', params.instance);
   if (product.family) query.set('familia', product.family);
@@ -357,7 +359,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
     setStageUpdating(true);
     setStageError(null);
     try {
-      const quoteUrl = buildQuoteUrl({ leadPhone, instance, leadInfo });
+      const quoteUrl = buildQuoteUrl({ leadPhone, leadId, clientId, instance, leadInfo });
       window.open(quoteUrl, '_blank', 'noopener,noreferrer');
     } catch (err) {
       setStageError(err instanceof Error ? err.message : 'No se pudo abrir el presupuestador');
