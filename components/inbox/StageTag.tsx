@@ -15,16 +15,16 @@ export function stageLabel(stage?: string) {
 export function StageTag({ stage }: { stage?: string }) {
   const config = STAGE[stage ?? ''] ?? STAGE.nuevo;
   return (
-    <span className="scala-alt" style={{
+    <span style={{
       display: 'inline-flex',
       alignItems: 'center',
       minHeight: 16,
-      padding: '2px 7px',
+      padding: '3px 8px',
       background: config.bg,
       color: config.color,
-      fontSize: 9,
-      fontWeight: 800,
-      letterSpacing: '0.12em',
+      borderRadius: 999,
+      fontSize: 11,
+      fontWeight: 700,
     }}>
       {config.label}
     </span>

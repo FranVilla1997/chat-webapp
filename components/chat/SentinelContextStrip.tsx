@@ -6,44 +6,54 @@ interface SentinelContextStripProps {
   onQuote?: () => void;
 }
 
-function confidenceColor(value: number) {
-  if (value >= 70) return 'var(--green)';
-  if (value >= 40) return 'var(--warm)';
-  return 'var(--hot)';
+function sentenceGoal(goal: string) {
+  const map: Record<string, string> = {
+    saludar: 'Saludar y abrir conversación',
+    calificar: 'Calificar el interés',
+    catalogo: 'Explicar catálogo',
+    medidas: 'Pedir medidas',
+    presupuesto: 'Preparar presupuesto',
+    seguimiento: 'Hacer seguimiento',
+  };
+  return map[goal] ?? goal;
 }
 
 export function SentinelContextStrip({ state, onTakeControl, onQuote }: SentinelContextStripProps) {
   const stuck = state.priority === 'stuck';
-  const missing = state.missingFacts.length ? state.missingFacts.join(' · ') : 'nada';
+  const missing = state.missingFacts.length ? state.missingFacts.join(' · ') : 'No faltan datos críticos';
+  const nextAction = stuck
+    ? 'El Sentinel no logró avanzar. Conviene tomar control.'
+    : state.currentGoal === 'presupuesto'
+      ? 'El lead está listo para recibir una propuesta.'
+      : `Próximo paso: ${state.nextAction ?? 'seguir calificando'}.`;
 
   return (
-    <div style={{
-      minHeight: 42,
+    <section style={{
       borderBottom: '1px solid var(--line)',
-      background: stuck
-        ? 'linear-gradient(90deg, rgba(255,174,92,0.16), rgba(255,174,92,0.04))'
-        : 'linear-gradient(90deg, rgba(107,221,161,0.12), rgba(107,221,161,0.025))',
+      background: 'var(--ink-1)',
+      padding: '14px 22px',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      gap: 16,
-      padding: '8px 18px',
+      gap: 18,
     }}>
-      <div className="scala-alt" style={{ display: 'flex', alignItems: 'center', gap: 16, minWidth: 0, fontSize: 10.5, fontWeight: 700 }}>
-        <span style={{ color: stuck ? 'var(--warm)' : 'var(--green)', letterSpacing: '0.18em' }}>
-          {stuck ? 'Sentinel necesita ayuda' : 'Sentinel'}
-        </span>
-        <span style={{ width: 1, height: 16, background: 'var(--line)' }} />
-        <span style={{ color: 'var(--text-2)' }}>Objetivo <b style={{ color: 'var(--text)' }}>{state.currentGoal}</b></span>
-        <span style={{ width: 1, height: 16, background: 'var(--line)' }} />
-        <span style={{ color: 'var(--text-2)' }}>Falta <b style={{ color: state.missingFacts.length ? 'var(--warm)' : 'var(--green)' }}>{missing}</b></span>
-        <span style={{ width: 1, height: 16, background: 'var(--line)' }} />
-        <span style={{ color: 'var(--text-2)' }}>Confianza <b style={{ color: confidenceColor(state.confidence) }}>{state.confidence}%</b></span>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 6 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: stuck ? 'var(--warm)' : 'var(--green)' }} />
+          <span style={{ color: 'var(--text)', fontWeight: 720, fontSize: 14 }}>
+            Próxima mejor acción
+          </span>
+          <span style={{ color: 'var(--text-4)', fontSize: 12 }}>Sentinel · confianza {state.confidence}%</span>
+        </div>
+        <p style={{ margin: 0, color: 'var(--text-2)', fontSize: 13, lineHeight: 1.45 }}>
+          {nextAction} <span style={{ color: state.missingFacts.length ? 'var(--warm)' : 'var(--green)' }}>Falta: {missing}</span>
+          <span style={{ color: 'var(--text-4)' }}> · Objetivo: {sentenceGoal(state.currentGoal)}</span>
+        </p>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
         <button className="scala-button" onClick={onTakeControl}>Tomar control</button>
         <button className="scala-button scala-button-primary" onClick={onQuote}>Presupuestar</button>
       </div>
-    </div>
+    </section>
   );
 }

@@ -45,24 +45,28 @@
   --green: #6bdda1;
   --green-700: #3b7a58;
   --green-300: #83cca1;
-  --ink-0: #000000;
-  --ink-1: #0a0a0c;
-  --ink-2: #111114;
-  --ink-3: #17171c;
-  --ink-4: #1d1d24;
-  --ink-5: #25252e;
-  --line: #232329;
-  --line-2: #2d2d36;
-  --text: #f2f2f4;
-  --text-2: #a8a8b3;
-  --text-3: #71717f;
-  --text-4: #4a4a55;
+  --ink-0: #080a0d;
+  --ink-1: #0d1014;
+  --ink-2: #111418;
+  --ink-3: #161a20;
+  --ink-4: #1b2028;
+  --ink-5: #202632;
+  --line: #252a32;
+  --line-2: #323946;
+  --text: #f2f4f7;
+  --text-2: #c7ced8;
+  --text-3: #98a2b3;
+  --text-4: #667085;
   --warm: #ffae5c;
   --hot: #ff6b6b;
-  --vendor-soft: rgba(24, 93, 232, 0.12);
+  --vendor-soft: rgba(24, 93, 232, 0.14);
   --sentinel-soft: rgba(107, 221, 161, 0.08);
-  --warm-soft: rgba(255, 174, 92, 0.1);
+  --warm-soft: rgba(255, 174, 92, 0.12);
   --hot-soft: rgba(255, 107, 107, 0.1);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --shadow-soft: 0 18px 60px rgba(0, 0, 0, 0.28);
   --display: 'VennDisplay', 'Venn', 'Helvetica Neue', Arial, sans-serif;
   --alt: 'Venn', 'Helvetica Neue', Arial, sans-serif;
   --sans: 'Helvetica Neue', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
@@ -112,7 +116,6 @@ a:focus-visible {
 
 .scala-display {
   font-family: var(--display);
-  text-transform: uppercase;
   letter-spacing: -0.01em;
   line-height: 0.98;
 }
@@ -126,21 +129,23 @@ a:focus-visible {
 .scala-panel {
   background: var(--ink-2);
   border: 1px solid var(--line);
+  border-radius: var(--radius-md);
 }
 
 .scala-button {
   border: 1px solid var(--line-2);
-  background: var(--ink-2);
+  background: #171c23;
   color: var(--text);
-  border-radius: 0;
-  min-height: 32px;
-  padding: 0 12px;
-  font-family: var(--alt);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  border-radius: 10px;
+  min-height: 36px;
+  padding: 0 14px;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
   cursor: pointer;
+  transition: border-color .16s ease, background .16s ease, color .16s ease, transform .16s ease;
 }
 
 .scala-button-primary {
@@ -157,6 +162,8 @@ a:focus-visible {
 
 .scala-button:hover:not(:disabled) {
   border-color: var(--blue-300);
+  background: #1d2430;
+  transform: translateY(-1px);
 }
 
 .scala-button:disabled {

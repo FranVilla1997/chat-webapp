@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -14,6 +14,7 @@ import { LeadPanel } from './LeadPanel';
 import { BotPauseControl } from './BotPauseControl';
 import { SentinelContextStrip } from './SentinelContextStrip';
 import { SuggestionsPanel } from './SuggestionsPanel';
+import { ErrorBanner } from '@/components/ui/ErrorBanner';
 import type { LeadInfo } from '@/lib/types';
 
 interface ChatContainerProps {
@@ -57,7 +58,7 @@ function inferMeasureUnit(value: string, explicitUnit?: string): 'cm' | 'm' {
 
 function parseLeadMeasurements(value?: string): { width?: string; height?: string; widthUnit?: 'cm' | 'm'; heightUnit?: 'cm' | 'm' } {
   if (!value) return {};
-  const normalized = value.replace(/×|Ãƒâ€”/g, 'x');
+  const normalized = value.replace(/Ã—|ÃƒÆ’Ã¢â‚¬â€/g, 'x');
   const directMatch = normalized.match(/(\d+(?:[.,]\d+)?)\s*(cm|m|mts?|metros?)?\s*(?:ancho|width)?\s*(?:x|por)\s*(\d+(?:[.,]\d+)?)\s*(cm|m|mts?|metros?)?\s*(?:alto|height)?/i);
   if (!directMatch) return {};
   return {
@@ -97,7 +98,7 @@ function rollerProductFromText(value?: string): string | undefined {
 
 function parseMeasurementItems(measurementsInfo?: string, productType?: string): QuoteUrlItem[] {
   if (!measurementsInfo) return [];
-  const normalized = measurementsInfo.replace(/×/g, 'x').replace(/,/g, '.');
+  const normalized = measurementsInfo.replace(/Ã—/g, 'x').replace(/,/g, '.');
   const labelPattern = /(sistema\s+doble|solo\s+sunscreen|sunscreen|blackout|black\s*out|zebra|eclipse|bandas?|cortinado|cortina)\s*:/gi;
   const labels = [...normalized.matchAll(labelPattern)];
   const chunks = labels.length
@@ -284,7 +285,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
   }, [suggestions, botPaused]);
 
   if (loading) {
-    return <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: 'var(--text-3)' }} className="scala-alt">Cargando conversación</div>;
+    return <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: 'var(--text-3)' }} >Cargando conversación...</div>;
   }
 
   if (error) {
@@ -305,36 +306,30 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
           onBack={showBack ? () => router.push('/inbox') : undefined}
         />
         <SentinelContextStrip state={sentinelState} onTakeControl={() => setSuggestionDraft('Te sigo yo desde acá para resolverlo más rápido.')} onQuote={openQuote} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 18px', borderBottom: '1px solid var(--line)', background: 'var(--ink-1)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 22px', borderBottom: '1px solid var(--line)', background: 'var(--ink-1)' }}>
           <BotPauseControl recordId={leadId} initialResumeAt={botResumeAt} onPause={pauseBot} onResume={resumeBot} busy={pauseBusy} />
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 18px 8px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '26px 24px 12px', display: 'flex', flexDirection: 'column', gap: 14, background: 'linear-gradient(180deg, var(--ink-0), #0a0d11)' }}>
           {messages.length === 0 ? (
             <div style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
-              <p className="scala-alt" style={{ color: 'var(--green)', fontSize: 11 }}>[ Sentinel está por enviar el saludo inicial ]</p>
+              <p style={{ color: 'var(--text-3)', fontSize: 13 }}>Sentinel está por enviar el saludo inicial.</p>
             </div>
           ) : (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
                 <span style={{ flex: 1, height: 1, background: 'var(--line)' }} />
-                <span className="scala-alt" style={{ color: 'var(--text-3)', fontSize: 10 }}>Hoy · {new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}</span>
+                <span style={{ color: 'var(--text-3)', fontSize: 11 }}>Hoy · {new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}</span>
                 <span style={{ flex: 1, height: 1, background: 'var(--line)' }} />
               </div>
               {messages.map((msg) => <MessageBubble key={msg.id} message={msg} isOptimistic={String(msg.id).startsWith('temp-')} />)}
-              <div className="scala-alt" style={{ alignSelf: 'flex-start', color: 'var(--text-3)', border: '1px dashed rgba(107,221,161,0.35)', background: 'rgba(107,221,161,0.04)', padding: '9px 12px', fontSize: 10 }}>
-                ... Sentinel está esperando respuesta del lead
-              </div>
+              <div style={{ alignSelf: 'flex-start', color: 'var(--text-3)', border: '1px solid rgba(107,221,161,0.14)', background: 'rgba(107,221,161,0.045)', borderRadius: 999, padding: '8px 12px', fontSize: 12 }}>Sentinel está esperando respuesta del lead</div>
             </>
           )}
           <div ref={bottomRef} style={{ height: 8 }} />
         </div>
 
-        {(sendError || audioError || fileError || stageError) && (
-          <div style={{ padding: '8px 18px', background: 'rgba(255,107,107,0.08)', borderTop: '1px solid rgba(255,107,107,0.25)', color: 'var(--hot)', fontSize: 11 }}>
-            {sendError || audioError || fileError || stageError}
-          </div>
-        )}
+        {(sendError || audioError || fileError || stageError) && <ErrorBanner error={sendError || audioError || fileError || stageError || ''} />}
 
         <SuggestionsPanel suggestions={suggestions} onPick={(text) => setSuggestionDraft(text)} hidden={suggestionsHidden} onHide={() => setSuggestionsHidden(true)} />
         <MessageInput
@@ -362,3 +357,5 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
     </div>
   );
 }
+
+

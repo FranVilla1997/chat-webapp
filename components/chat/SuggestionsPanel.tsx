@@ -9,43 +9,55 @@ interface SuggestionsPanelProps {
 
 export function SuggestionsPanel({ suggestions, onPick, hidden, onHide }: SuggestionsPanelProps) {
   if (hidden || suggestions.length === 0) return null;
+  const primary = suggestions[0];
+
   return (
-    <section style={{ borderTop: '1px solid var(--line)', background: 'var(--ink-1)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 18px 6px' }}>
-        <span className="scala-alt" style={{ color: 'var(--green)', fontSize: 10, fontWeight: 800 }}>
-          ▲ Sentinel sugiere <span style={{ color: 'var(--text-3)' }}>· 3 respuestas para acelerar</span>
-        </span>
-        {onHide && (
-          <button className="scala-alt" onClick={onHide} style={{ border: 'none', background: 'transparent', color: 'var(--text-3)', fontSize: 9.5, cursor: 'pointer' }}>
-            Ocultar
-          </button>
+    <section style={{ borderTop: '1px solid var(--line)', background: 'var(--ink-1)', padding: '12px 18px' }}>
+      <div style={{
+        border: '1px solid rgba(107,221,161,0.16)',
+        background: 'linear-gradient(135deg, rgba(107,221,161,0.08), rgba(255,255,255,0.025))',
+        borderRadius: 'var(--radius-lg)',
+        padding: 14,
+        display: 'grid',
+        gap: 12,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={{ color: 'var(--green)', fontSize: 11, fontWeight: 750, marginBottom: 4 }}>Sugerencia IA</div>
+            <div style={{ color: 'var(--text)', fontSize: 14, lineHeight: 1.45 }}>{primary.text}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button className="scala-button scala-button-primary" onClick={() => onPick(primary.text)}>Usar sugerencia</button>
+            <button className="scala-button" onClick={() => onPick(primary.text)}>Editar</button>
+            {onHide && <button className="scala-button" onClick={onHide}>Ocultar</button>}
+          </div>
+        </div>
+        {suggestions.length > 1 && (
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
+            {suggestions.slice(1, 3).map((suggestion, index) => (
+              <button
+                key={suggestion.id}
+                onClick={() => onPick(suggestion.text)}
+                style={{
+                  flex: 1,
+                  minWidth: 210,
+                  border: '1px solid var(--line)',
+                  background: 'rgba(255,255,255,0.025)',
+                  color: 'var(--text-2)',
+                  borderRadius: 12,
+                  padding: '9px 10px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  lineHeight: 1.35,
+                }}
+              >
+                <span style={{ color: 'var(--text-4)', marginRight: 6 }}>{index + 2}.</span>
+                {suggestion.text}
+              </button>
+            ))}
+          </div>
         )}
-      </div>
-      <div style={{ display: 'grid', gap: 6, padding: '0 18px 10px' }}>
-        {suggestions.slice(0, 3).map((suggestion, index) => (
-          <button
-            key={suggestion.id}
-            onClick={() => onPick(suggestion.text)}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '24px 1fr',
-              alignItems: 'center',
-              gap: 10,
-              minHeight: 28,
-              border: '1px solid var(--line)',
-              background: 'var(--ink-2)',
-              color: 'var(--text-2)',
-              padding: '6px 10px',
-              textAlign: 'left',
-              cursor: 'pointer',
-            }}
-          >
-            <span style={{ border: '1px solid var(--line-2)', color: 'var(--text-3)', fontFamily: 'var(--mono)', fontSize: 10, textAlign: 'center', padding: '1px 0' }}>
-              {index + 1}
-            </span>
-            <span style={{ fontSize: 12, lineHeight: 1.35 }}>{suggestion.text}</span>
-          </button>
-        ))}
       </div>
     </section>
   );

@@ -4,22 +4,21 @@ export function TemperatureCard({ score, state }: { score?: string; state: Senti
   const value = Number(score ?? state.intentScore) || state.intentScore;
   const angle = Math.min(100, Math.max(0, value)) * 3.6;
   const tone = state.temperature === 'caliente' ? 'var(--hot)' : state.temperature === 'tibio' ? 'var(--warm)' : 'var(--green)';
+  const trend = value >= 45 ? 'en aumento' : 'estable';
+
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
-      <div style={{ width: 52, height: 52, borderRadius: '50%', background: `conic-gradient(${tone} 0deg, var(--green) ${angle}deg, var(--ink-4) ${angle}deg)`, display: 'grid', placeItems: 'center' }}>
-        <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--ink-1)', display: 'grid', placeItems: 'center', color: 'var(--text)', fontFamily: 'var(--display)', fontSize: 17 }}>
+      <div style={{ width: 54, height: 54, borderRadius: '50%', background: `conic-gradient(${tone} 0deg, ${tone} ${angle}deg, var(--ink-4) ${angle}deg)`, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+        <div style={{ width: 42, height: 42, borderRadius: '50%', background: 'var(--ink-2)', display: 'grid', placeItems: 'center', color: 'var(--text)', fontFamily: 'var(--display)', fontSize: 17 }}>
           {value}
         </div>
       </div>
-      <div>
-        <div className="scala-alt" style={{ color: tone, fontSize: 13, fontWeight: 800, letterSpacing: '0.06em' }}>
-          {state.temperature} · en aumento
+      <div style={{ minWidth: 0 }}>
+        <div style={{ color: tone, fontSize: 14, fontWeight: 750, textTransform: 'capitalize' }}>
+          {state.temperature} · {trend}
         </div>
-        <p style={{ color: 'var(--text-3)', margin: '4px 0 0', fontSize: 11 }}>Pidió ver catálogo · 0 objeciones</p>
+        <p style={{ color: 'var(--text-3)', margin: '4px 0 0', fontSize: 12 }}>Confianza IA {state.confidence}%</p>
       </div>
-      <span className="scala-alt" style={{ marginLeft: 'auto', background: 'rgba(107,221,161,0.12)', color: 'var(--green)', padding: '3px 7px', fontSize: 9, fontWeight: 800 }}>
-        IA · {state.confidence}%
-      </span>
     </div>
   );
 }

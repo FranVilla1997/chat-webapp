@@ -25,65 +25,95 @@ function getField(lead: LeadInfo, label: string) {
   return lead.fields?.find((field) => field.label.toLowerCase() === label.toLowerCase())?.value;
 }
 
+function buildSummary(lead: LeadInfo, state: SentinelState) {
+  const product = lead.productType ?? getField(lead, 'Producto');
+  const measures = lead.measurementsInfo ?? getField(lead, 'Medidas');
+  const zone = getField(lead, 'Zona');
+  const interest = product ? `Mostró interés en ${product}.` : 'Todavía no definió sistema o producto.';
+  const missing: string[] = [];
+  if (!measures) missing.push('medidas');
+  if (!zone) missing.push('zona');
+  if (!product) missing.push('sistema');
+  return `${interest} ${missing.length ? `Falta confirmar ${missing.join(', ')}.` : 'Tiene los datos principales para avanzar.'} Confianza IA ${state.confidence}%.`;
+}
+
 export function LeadPanel({ lead, followups, open, onClose, sentinelState }: LeadPanelProps) {
   const pending = followups.filter((f) => f.status === 'pending');
   const initial = (lead.name ?? lead.phone ?? '?').charAt(0).toUpperCase();
+  const nextAction = sentinelState.currentGoal === 'presupuesto'
+    ? 'Preparar y enviar presupuesto al cliente.'
+    : sentinelState.missingFacts.length
+      ? `Pedir ${sentinelState.missingFacts.join(' y ')} para avanzar.`
+      : 'Continuar la conversación y validar intención de compra.';
 
   return (
-    <aside style={{ width: open ? 288 : 0, minWidth: open ? 288 : 0, overflow: 'hidden', transition: 'width .2s ease, min-width .2s ease', borderLeft: open ? '1px solid var(--line)' : 'none', background: 'var(--ink-1)', flexShrink: 0 }}>
-      <div style={{ width: 288, height: '100%', overflowY: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 14px 12px' }}>
-          <span className="scala-alt" style={{ color: 'var(--text-3)', fontSize: 10, fontWeight: 700 }}>Info del lead</span>
-          <button onClick={onClose} aria-label="Cerrar info del lead" style={{ border: 'none', background: 'transparent', color: 'var(--text-3)', cursor: 'pointer' }}>×</button>
+    <aside style={{ width: open ? 320 : 0, minWidth: open ? 320 : 0, overflow: 'hidden', transition: 'width .2s ease, min-width .2s ease', borderLeft: open ? '1px solid var(--line)' : 'none', background: 'var(--ink-1)', flexShrink: 0 }}>
+      <div style={{ width: 320, height: '100%', overflowY: 'auto', padding: 16, display: 'grid', gap: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 16 }}>Info del lead</h2>
+          <button onClick={onClose} aria-label="Cerrar info del lead" style={{ border: 'none', background: 'transparent', color: 'var(--text-3)', cursor: 'pointer', fontSize: 18 }}>×</button>
         </div>
 
-        <section style={{ borderTop: '1px solid var(--line)', borderBottom: '1px solid var(--line)', padding: 14 }}>
+        <section className="scala-panel" style={{ padding: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 38, height: 38, display: 'grid', placeItems: 'center', background: 'var(--ink-5)', border: '1px solid var(--line-2)', fontFamily: 'var(--display)', fontSize: 16 }}>{initial}</div>
+            <div style={{ width: 42, height: 42, borderRadius: 12, display: 'grid', placeItems: 'center', background: 'var(--ink-5)', border: '1px solid var(--line-2)', fontFamily: 'var(--display)', fontSize: 16 }}>{initial}</div>
             <div style={{ minWidth: 0 }}>
-              <strong style={{ display: 'block', color: 'var(--text)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.name ?? 'Sin nombre'}</strong>
-              <span style={{ color: 'var(--text-3)', fontSize: 11, fontFamily: 'var(--mono)' }}>{formatPhone(lead.phone)}</span>
+              <strong style={{ display: 'block', color: 'var(--text)', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.name ?? 'Sin nombre'}</strong>
+              <span style={{ color: 'var(--text-3)', fontSize: 12 }}>{formatPhone(lead.phone)}</span>
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5, marginTop: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 14 }}>
             <button className="scala-button">Llamar</button>
             <button className="scala-button">Notas</button>
             <button className="scala-button">Derivar</button>
           </div>
         </section>
 
-        <section style={{ padding: 14, borderBottom: '1px solid var(--line)' }}>
-          <Eyebrow action={<span className="scala-alt" style={{ color: 'var(--green)', fontSize: 9, fontWeight: 800 }}>IA · {sentinelState.confidence}%</span>}>Temperatura</Eyebrow>
-          <div style={{ marginTop: 14 }}>
+        <section className="scala-panel" style={{ padding: 14 }}>
+          <Eyebrow>Resumen del lead</Eyebrow>
+          <p style={{ margin: '10px 0 0', color: 'var(--text-2)', fontSize: 13, lineHeight: 1.55 }}>
+            {buildSummary(lead, sentinelState)}
+          </p>
+        </section>
+
+        <section style={{ border: '1px solid rgba(24,93,232,0.28)', background: 'rgba(24,93,232,0.1)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+          <div style={{ color: 'var(--blue-200)', fontSize: 12, fontWeight: 750, marginBottom: 8 }}>Próxima mejor acción</div>
+          <p style={{ margin: 0, color: 'var(--text)', fontSize: 14, lineHeight: 1.45 }}>{nextAction}</p>
+        </section>
+
+        <section className="scala-panel" style={{ padding: 14 }}>
+          <Eyebrow action={<span style={{ color: 'var(--green)', fontSize: 11, fontWeight: 700 }}>IA {sentinelState.confidence}%</span>}>Temperatura comercial</Eyebrow>
+          <div style={{ marginTop: 12 }}>
             <TemperatureCard score={lead.score} state={sentinelState} />
           </div>
         </section>
 
-        <section style={{ padding: 14, borderBottom: '1px solid var(--line)' }}>
-          <Eyebrow action={<span className="scala-alt" style={{ color: 'var(--green)', fontSize: 9, fontWeight: 800 }}>Sentinel</span>}>Datos extraídos</Eyebrow>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, marginTop: 14 }}>
+        <section className="scala-panel" style={{ padding: 14 }}>
+          <Eyebrow>Datos capturados</Eyebrow>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
             <FactCard span={2} label="Etapa" value={`Nuevo → ${stageLabel(lead.stage)}`} />
+            <FactCard label="Producto" value={lead.productType ?? getField(lead, 'Producto')} />
             <FactCard label="Ambiente" value={getField(lead, 'Ambiente')} />
             <FactCard label="Medidas" value={lead.measurementsInfo ?? getField(lead, 'Medidas')} />
-            <FactCard label="Sistemas mostrados" value={lead.productType ?? getField(lead, 'Producto')} />
-            <FactCard label="Instancia" value={lead.sourceInstance} />
-            <FactCard label="Presupuesto estimado" value={getField(lead, 'Presupuesto')} />
+            <FactCard label="Zona" value={getField(lead, 'Zona')} />
+            <FactCard label="Presupuesto" value={getField(lead, 'Presupuesto')} />
             <FactCard label="Plazo" value={getField(lead, 'Urgencia')} />
+            <FactCard span={2} label="Instancia" value={lead.sourceInstance} />
           </div>
         </section>
 
-        <section style={{ padding: 14, borderBottom: '1px solid var(--line)' }}>
-          <Eyebrow action={pending.length > 0 && <span className="scala-alt" style={{ color: 'var(--warm)', fontSize: 9, fontWeight: 800 }}>{pending.length} pendiente</span>}>Seguimientos</Eyebrow>
-          <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
-            {pending.length ? pending.map((followup) => <FollowupCard key={followup.id} followup={followup} />) : <p style={{ color: 'var(--text-4)', fontSize: 12 }}>Sin seguimientos pendientes.</p>}
+        <section className="scala-panel" style={{ padding: 14 }}>
+          <Eyebrow action={pending.length > 0 && <span style={{ color: 'var(--warm)', fontSize: 11, fontWeight: 700 }}>{pending.length} pendiente</span>}>Seguimientos</Eyebrow>
+          <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+            {pending.length ? pending.map((followup) => <FollowupCard key={followup.id} followup={followup} />) : <p style={{ color: 'var(--text-4)', fontSize: 13, margin: 0 }}>Sin seguimientos pendientes.</p>}
           </div>
         </section>
 
-        <section style={{ padding: 14 }}>
+        <section style={{ padding: '4px 2px 12px' }}>
           <Eyebrow>Historial</Eyebrow>
-          <div style={{ marginTop: 14, display: 'grid', gap: 12, borderLeft: '1px solid var(--line-2)', paddingLeft: 10 }}>
-            <TimelineItem color="var(--green)" time="04:10 · hace 2 min">Sentinel mostró catálogo de sistemas.</TimelineItem>
-            <TimelineItem color="var(--text-3)" time="04:08 · hace 4 min">Lead pidió más información.</TimelineItem>
+          <div style={{ marginTop: 12, display: 'grid', gap: 10, opacity: 0.72 }}>
+            <TimelineItem color="var(--green)" time="Hace 2 min">Sentinel mostró catálogo de sistemas.</TimelineItem>
+            <TimelineItem color="var(--text-4)" time="Hace 4 min">Lead pidió más información.</TimelineItem>
           </div>
         </section>
       </div>

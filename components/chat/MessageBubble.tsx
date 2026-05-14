@@ -10,14 +10,13 @@ function formatTime(iso: string) {
 }
 
 function renderMarkdown(text: string) {
-  const lines = text.split('\n');
-  return lines.map((line, index) => {
+  return text.split('\n').map((line, index) => {
     const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
     const content = bullet ? bullet[1] : line;
     const parts = content.split(/(\*\*[^*]+\*\*)/g);
     return (
-      <span key={index} style={{ display: 'block', paddingLeft: bullet ? 14 : 0, position: 'relative' }}>
-        {bullet && <span style={{ position: 'absolute', left: 0, color: 'var(--green)' }}>•</span>}
+      <span key={index} style={{ display: 'block', paddingLeft: bullet ? 16 : 0, position: 'relative' }}>
+        {bullet && <span style={{ position: 'absolute', left: 1, color: 'var(--green)' }}>•</span>}
         {parts.map((part, partIndex) => part.startsWith('**') && part.endsWith('**')
           ? <strong key={partIndex} style={{ color: 'var(--text)', fontWeight: 700 }}>{part.slice(2, -2)}</strong>
           : <span key={partIndex}>{part}</span>
@@ -35,9 +34,8 @@ function roleMeta(role: Message['role']) {
       color: 'var(--green)',
       align: 'flex-start' as const,
       bubble: {
-        background: 'rgba(107,221,161,0.08)',
-        border: '1px solid rgba(107,221,161,0.35)',
-        borderLeft: '2px solid var(--green)',
+        background: 'rgba(107,221,161,0.075)',
+        border: '1px solid rgba(107,221,161,0.18)',
       },
     };
   }
@@ -48,16 +46,15 @@ function roleMeta(role: Message['role']) {
       color: 'var(--blue-200)',
       align: 'flex-end' as const,
       bubble: {
-        background: 'rgba(24,93,232,0.18)',
-        border: '1px solid rgba(24,93,232,0.42)',
-        borderRight: '2px solid var(--blue-200)',
+        background: 'rgba(24,93,232,0.16)',
+        border: '1px solid rgba(84,142,226,0.22)',
       },
     };
   }
   return {
     label: 'Lead',
-    dot: 'var(--text-3)',
-    color: 'var(--text-2)',
+    dot: 'var(--text-4)',
+    color: 'var(--text-3)',
     align: 'flex-start' as const,
     bubble: {
       background: 'var(--ink-3)',
@@ -69,8 +66,8 @@ function roleMeta(role: Message['role']) {
 export function MessageBubble({ message, isOptimistic }: MessageBubbleProps) {
   if (message.role === 'system') {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', margin: '8px 0' }}>
-        <span className="scala-alt" style={{ color: 'var(--text-3)', border: '1px solid var(--line)', background: 'var(--ink-1)', padding: '5px 12px', fontSize: 9.5 }}>
+      <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0' }}>
+        <span style={{ color: 'var(--text-3)', border: '1px solid var(--line)', background: 'var(--ink-2)', padding: '6px 12px', borderRadius: 999, fontSize: 11 }}>
           {message.content}
         </span>
       </div>
@@ -81,27 +78,29 @@ export function MessageBubble({ message, isOptimistic }: MessageBubbleProps) {
   const isRight = meta.align === 'flex-end';
 
   return (
-    <div style={{ display: 'flex', justifyContent: meta.align, opacity: isOptimistic ? 0.55 : 1 }}>
-      <div style={{ width: 'min(72%, 560px)', display: 'flex', flexDirection: 'column', alignItems: isRight ? 'flex-end' : 'flex-start', gap: 5 }}>
-        <div className="scala-alt" style={{ display: 'flex', alignItems: 'center', gap: 6, color: meta.color, fontSize: 9.5, fontWeight: 800 }}>
-          <span style={{ width: 5, height: 5, borderRadius: '50%', background: meta.dot }} />
+    <div style={{ display: 'flex', justifyContent: meta.align, opacity: isOptimistic ? 0.58 : 1, margin: '2px 0' }}>
+      <div style={{ width: 'min(76%, 620px)', display: 'flex', flexDirection: 'column', alignItems: isRight ? 'flex-end' : 'flex-start', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: meta.color, fontSize: 11, fontWeight: 700 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: meta.dot }} />
           {meta.label}
         </div>
         <div style={{
           ...meta.bubble,
-          padding: '10px 14px',
+          borderRadius: isRight ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+          padding: '12px 15px',
           color: 'var(--text)',
-          fontSize: 13,
-          lineHeight: 1.55,
+          fontSize: 14,
+          lineHeight: 1.58,
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
+          boxShadow: '0 10px 26px rgba(0,0,0,0.14)',
         }}>
           {message.was_audio && (
-            <span className="scala-alt" style={{ display: 'block', color: 'var(--text-3)', fontSize: 9, marginBottom: 5 }}>Audio transcripto</span>
+            <span style={{ display: 'block', color: 'var(--text-3)', fontSize: 11, marginBottom: 6 }}>Audio transcripto</span>
           )}
           {message.role === 'assistant' ? renderMarkdown(message.content) : message.content}
         </div>
-        <span className="scala-alt" style={{ color: 'var(--text-4)', fontSize: 9.5, letterSpacing: '0.06em', fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ color: 'var(--text-4)', fontSize: 10, fontVariantNumeric: 'tabular-nums' }}>
           {formatTime(message.created_at)}
         </span>
       </div>
