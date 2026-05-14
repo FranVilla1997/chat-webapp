@@ -57,6 +57,7 @@ export default async function ConversationPage({ searchParams }: PageProps) {
         name:   searchParams.lead_name,
         stage:  searchParams.lead_stage,
         score:  searchParams.lead_score,
+        sourceInstance: searchParams.instance,
         sellerName: searchParams.sellerName ?? searchParams.vendedor ?? searchParams.seller,
         productType: searchParams.producto ?? searchParams.product,
         measurementsInfo: searchParams.medidas ?? searchParams.measurements,

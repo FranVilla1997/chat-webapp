@@ -351,15 +351,26 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
   const [presupuestoEnviado, setPresupuestoEnviado] = useState(false);
   const [botResumeAt, setBotResumeAt] = useState(leadInfo?.botResumeAt ?? '');
   const [pauseBusy, setPauseBusy] = useState(false);
-  const hasLeadInfo = !!(leadInfo?.name || leadInfo?.stage || leadInfo?.score || leadInfo?.fields?.length);
+  const enrichedLeadInfo: LeadInfo | undefined = leadInfo
+    ? { ...leadInfo, sourceInstance: leadInfo.sourceInstance || instance }
+    : instance
+      ? { sourceInstance: instance }
+      : undefined;
+  const hasLeadInfo = !!(
+    enrichedLeadInfo?.name ||
+    enrichedLeadInfo?.stage ||
+    enrichedLeadInfo?.score ||
+    enrichedLeadInfo?.sourceInstance ||
+    enrichedLeadInfo?.fields?.length
+  );
 
-  const isCalificado = leadInfo?.stage?.toLowerCase() === 'calificado';
+  const isCalificado = enrichedLeadInfo?.stage?.toLowerCase() === 'calificado';
 
   async function handlePresupuestar() {
     setStageUpdating(true);
     setStageError(null);
     try {
-      const quoteUrl = buildQuoteUrl({ leadPhone, leadId, clientId, instance, leadInfo });
+      const quoteUrl = buildQuoteUrl({ leadPhone, leadId, clientId, instance, leadInfo: enrichedLeadInfo });
       window.open(quoteUrl, '_blank', 'noopener,noreferrer');
     } catch (err) {
       setStageError(err instanceof Error ? err.message : 'No se pudo abrir el presupuestador');
@@ -461,7 +472,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <ChatHeader
             leadPhone={leadPhone}
-            leadInfo={leadInfo}
+            leadInfo={enrichedLeadInfo}
             messages={messages}
             realtimeStatus={realtimeStatus}
             panelOpen={effectivePanelOpen}
@@ -558,7 +569,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
         {/* Lead info panel */}
         {hasLeadInfo && (
           <LeadPanel
-            lead={{ ...leadInfo, phone: leadPhone }}
+            lead={{ ...enrichedLeadInfo, phone: leadPhone }}
             followups={followups}
             open={effectivePanelOpen}
             onClose={() => setPanelOpen(false)}

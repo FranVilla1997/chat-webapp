@@ -31,6 +31,7 @@ const statusConfig = {
   human:  { label: 'Vendedor activo', dot: '#6bdda1', ring: 'rgba(107,221,161,0.3)' },
   paused: { label: 'Pausado',         dot: '#5a5a72', ring: 'rgba(90,90,114,0.3)' },
 };
+const monoFont = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
 
 export function ChatHeader({ leadPhone, leadInfo, messages, realtimeStatus, panelOpen, onTogglePanel, onBack }: ChatHeaderProps) {
   const status = detectStatus(messages);
@@ -89,6 +90,19 @@ export function ChatHeader({ leadPhone, leadInfo, messages, realtimeStatus, pane
               <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.02em' }}>
                 {formatPhone(leadPhone)}
               </span>
+              {leadInfo?.sourceInstance && (
+                <span style={{
+                  fontSize: 10,
+                  color: '#6bdda1',
+                  fontFamily: monoFont,
+                  letterSpacing: '0.03em',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}>
+                  Instancia: {leadInfo.sourceInstance}
+                </span>
+              )}
             </>
           ) : (
             <>
@@ -98,6 +112,19 @@ export function ChatHeader({ leadPhone, leadInfo, messages, realtimeStatus, pane
               <span style={{ fontSize: 13, fontWeight: 500, color: '#f0f0f5', letterSpacing: '0.02em', lineHeight: 1 }}>
                 {formatPhone(leadPhone)}
               </span>
+              {leadInfo?.sourceInstance && (
+                <span style={{
+                  fontSize: 10,
+                  color: '#6bdda1',
+                  fontFamily: monoFont,
+                  letterSpacing: '0.03em',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}>
+                  Instancia: {leadInfo.sourceInstance}
+                </span>
+              )}
             </>
           )}
         </div>
