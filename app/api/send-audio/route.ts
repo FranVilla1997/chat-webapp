@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Send audio via Evolution API
-    await sendWhatsAppAudio(instance, leadPhone, audioBase64);
+    await sendWhatsAppAudio(instance, leadPhone, audioBase64, clientId);
 
     // 2. Insert into messages table
     const { data: message, error: msgError } = await supabase
