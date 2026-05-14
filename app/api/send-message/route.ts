@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Send via Evolution API
-    await sendWhatsAppMessage(instance, leadPhone, text.trim());
+    await sendWhatsAppMessage(instance, leadPhone, text.trim(), clientId);
 
     // 2. Insert into messages table (lead_id = Airtable record ID)
     const { data: message, error: msgError } = await supabaseAdmin

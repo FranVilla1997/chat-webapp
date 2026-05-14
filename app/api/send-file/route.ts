@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       mimeType,
       fileName,
       caption: caption?.trim() ?? '',
-    });
+    }, clientId);
 
     const label = mediaType === 'image' ? 'Foto' : mediaType === 'video' ? 'Video' : 'Archivo';
     const content = caption?.trim() ? `${label}: ${caption.trim()}` : `${label} enviado: ${fileName}`;
