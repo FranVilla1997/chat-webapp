@@ -22,8 +22,8 @@ export function ErrorBanner({ error }: ErrorBannerProps) {
   return (
     <div style={{
       margin: '10px 18px',
-      border: '1px solid rgba(255,107,107,0.22)',
-      background: 'rgba(255,107,107,0.08)',
+      border: '1px solid rgba(239,68,68,0.18)',
+      background: 'rgba(239,68,68,0.08)',
       borderRadius: 'var(--radius-md)',
       padding: '10px 12px',
       color: 'var(--text)',

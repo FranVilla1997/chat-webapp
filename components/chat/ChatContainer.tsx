@@ -58,7 +58,7 @@ function inferMeasureUnit(value: string, explicitUnit?: string): 'cm' | 'm' {
 
 function parseLeadMeasurements(value?: string): { width?: string; height?: string; widthUnit?: 'cm' | 'm'; heightUnit?: 'cm' | 'm' } {
   if (!value) return {};
-  const normalized = value.replace(/Ã—|ÃƒÆ’Ã¢â‚¬â€/g, 'x');
+  const normalized = value.replace(/[×]/g, 'x');
   const directMatch = normalized.match(/(\d+(?:[.,]\d+)?)\s*(cm|m|mts?|metros?)?\s*(?:ancho|width)?\s*(?:x|por)\s*(\d+(?:[.,]\d+)?)\s*(cm|m|mts?|metros?)?\s*(?:alto|height)?/i);
   if (!directMatch) return {};
   return {
@@ -98,7 +98,7 @@ function rollerProductFromText(value?: string): string | undefined {
 
 function parseMeasurementItems(measurementsInfo?: string, productType?: string): QuoteUrlItem[] {
   if (!measurementsInfo) return [];
-  const normalized = measurementsInfo.replace(/Ã—/g, 'x').replace(/,/g, '.');
+  const normalized = measurementsInfo.replace(/[×]/g, 'x').replace(/,/g, '.');
   const labelPattern = /(sistema\s+doble|solo\s+sunscreen|sunscreen|blackout|black\s*out|zebra|eclipse|bandas?|cortinado|cortina)\s*:/gi;
   const labels = [...normalized.matchAll(labelPattern)];
   const chunks = labels.length
@@ -310,7 +310,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
           <BotPauseControl recordId={leadId} initialResumeAt={botResumeAt} onPause={pauseBot} onResume={resumeBot} busy={pauseBusy} />
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '26px 24px 12px', display: 'flex', flexDirection: 'column', gap: 14, background: 'linear-gradient(180deg, var(--ink-0), #0a0d11)' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '26px 24px 12px', display: 'flex', flexDirection: 'column', gap: 14, background: 'linear-gradient(180deg, var(--ink-0), #060812)' }}>
           {messages.length === 0 ? (
             <div style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
               <p style={{ color: 'var(--text-3)', fontSize: 13 }}>Sentinel está por enviar el saludo inicial.</p>
@@ -323,7 +323,10 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
                 <span style={{ flex: 1, height: 1, background: 'var(--line)' }} />
               </div>
               {messages.map((msg) => <MessageBubble key={msg.id} message={msg} isOptimistic={String(msg.id).startsWith('temp-')} />)}
-              <div style={{ alignSelf: 'flex-start', color: 'var(--text-3)', border: '1px solid rgba(107,221,161,0.14)', background: 'rgba(107,221,161,0.045)', borderRadius: 999, padding: '8px 12px', fontSize: 12 }}>Sentinel está esperando respuesta del lead</div>
+              <div style={{ alignSelf: 'flex-start', color: 'var(--text-3)', border: '1px solid var(--line)', background: 'rgba(255,255,255,0.025)', borderRadius: 999, padding: '8px 12px', fontSize: 12 }}>
+                <span style={{ color: 'var(--green)', marginRight: 6 }}>•</span>
+                Sentinel está esperando respuesta del lead
+              </div>
             </>
           )}
           <div ref={bottomRef} style={{ height: 8 }} />

@@ -14,8 +14,8 @@ export function SuggestionsPanel({ suggestions, onPick, hidden, onHide }: Sugges
   return (
     <section style={{ borderTop: '1px solid var(--line)', background: 'var(--ink-1)', padding: '12px 18px' }}>
       <div style={{
-        border: '1px solid rgba(107,221,161,0.16)',
-        background: 'linear-gradient(135deg, rgba(107,221,161,0.08), rgba(255,255,255,0.025))',
+        border: '1px solid rgba(96,165,250,0.16)',
+        background: 'linear-gradient(135deg, rgba(37,99,235,0.1), rgba(255,255,255,0.025))',
         borderRadius: 'var(--radius-lg)',
         padding: 14,
         display: 'grid',
@@ -23,7 +23,7 @@ export function SuggestionsPanel({ suggestions, onPick, hidden, onHide }: Sugges
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <div style={{ color: 'var(--green)', fontSize: 11, fontWeight: 750, marginBottom: 4 }}>Sugerencia IA</div>
+            <div style={{ color: 'var(--blue-200)', fontSize: 11, fontWeight: 750, marginBottom: 4 }}>Sugerencia IA</div>
             <div style={{ color: 'var(--text)', fontSize: 14, lineHeight: 1.45 }}>{primary.text}</div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>

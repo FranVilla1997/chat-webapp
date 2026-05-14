@@ -7,6 +7,7 @@ import { buildLeadInfoFromAirtable } from '@/lib/utils';
 import { deriveSentinelState } from '@/lib/sentinel/deriveSentinelState';
 import { Logo } from '@/components/brand/Logo';
 import { Eyebrow } from '@/components/brand/Eyebrow';
+import { StairsAccent } from '@/components/brand/StairsAccent';
 import { StageTag } from '@/components/inbox/StageTag';
 import { IntentBar } from '@/components/inbox/IntentBar';
 import { ChatContainer } from './ChatContainer';
@@ -37,6 +38,8 @@ const FILTERS = [
   { key: 'hot', label: 'Calientes' },
   { key: 'old', label: 'Sin actividad 24h' },
 ];
+
+const NAV_ITEMS = ['Dashboard', 'Pipeline', 'Leads', 'Configuración', 'Instancias', 'Demo'];
 
 function formatTime(iso: string) {
   if (!iso) return '';
@@ -147,19 +150,45 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '220px 330px minmax(0, 1fr)', height: '100svh', background: 'var(--ink-0)', overflow: 'hidden' }}>
-      <aside style={{ background: '#0b0e13', borderRight: '1px solid var(--line)', padding: 18, overflowY: 'auto' }}>
-        <div style={{ marginBottom: 20 }}><Logo /></div>
+    <div style={{ display: 'grid', gridTemplateColumns: '230px 340px minmax(0, 1fr)', height: '100svh', background: 'var(--ink-0)', overflow: 'hidden' }}>
+      <aside style={{ background: 'linear-gradient(180deg, #0d1b3d 0%, #07111f 48%, #060812 100%)', borderRight: '1px solid var(--line)', padding: 18, overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 20 }}>
+          <Logo />
+          <span style={{ color: 'var(--text-2)', fontSize: 12, fontWeight: 700 }}>Sentinel</span>
+        </div>
 
-        <div className="scala-panel" style={{ display: 'flex', alignItems: 'center', gap: 11, padding: 12, marginBottom: 14 }}>
-          <div style={{ width: 38, height: 38, borderRadius: 12, background: 'var(--ink-5)', display: 'grid', placeItems: 'center', fontFamily: 'var(--display)' }}>{sellerName?.charAt(0).toUpperCase() ?? 'S'}</div>
+        <div className="scala-panel" style={{ display: 'flex', alignItems: 'center', gap: 11, padding: 12, marginBottom: 14, background: 'rgba(255,255,255,0.035)' }}>
+          <div style={{ width: 38, height: 38, borderRadius: 14, background: 'rgba(37,99,235,0.18)', border: '1px solid rgba(96,165,250,0.18)', display: 'grid', placeItems: 'center', fontFamily: 'var(--display)' }}>{sellerName?.charAt(0).toUpperCase() ?? 'S'}</div>
           <div style={{ minWidth: 0 }}>
             <strong style={{ display: 'block', color: 'var(--text)', fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sellerName ?? 'Vendedor'}</strong>
             <span style={{ color: 'var(--text-3)', fontSize: 11 }}>Vendedor · RC</span>
           </div>
         </div>
 
-        <div style={{ border: '1px solid var(--line)', background: 'linear-gradient(135deg, var(--ink-2), #141922)', borderRadius: 'var(--radius-lg)', padding: 16, marginBottom: 24, boxShadow: 'var(--shadow-soft)' }}>
+        <nav style={{ display: 'grid', gap: 6, marginBottom: 18 }}>
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item}
+              style={{
+                minHeight: 36,
+                border: item === 'Leads' ? '1px solid rgba(37,99,235,0.35)' : '1px solid transparent',
+                borderRadius: 12,
+                background: item === 'Leads' ? 'rgba(37,99,235,0.16)' : 'transparent',
+                boxShadow: item === 'Leads' ? '0 10px 28px rgba(37,99,235,0.12)' : 'none',
+                color: item === 'Leads' ? 'var(--text)' : 'var(--text-3)',
+                padding: '0 11px',
+                textAlign: 'left',
+                cursor: 'pointer',
+                fontWeight: item === 'Leads' ? 720 : 560,
+              }}
+            >
+              {item}
+            </button>
+          ))}
+        </nav>
+
+        <div style={{ position: 'relative', border: '1px solid var(--line)', background: 'linear-gradient(135deg, rgba(15,19,29,0.88), rgba(37,99,235,0.08))', borderRadius: 'var(--radius-lg)', padding: 16, marginBottom: 24, boxShadow: 'var(--shadow-soft)', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', top: 13, right: 13, opacity: 0.9 }}><StairsAccent color="var(--green)" /></div>
           <div style={{ color: 'var(--text-3)', fontSize: 12 }}>Pipeline de hoy</div>
           <div className="scala-display" style={{ color: 'var(--text)', fontSize: 34, marginTop: 8 }}>{leads.length}</div>
           <div style={{ color: 'var(--green)', fontSize: 12, fontWeight: 700, lineHeight: 1.45 }}>
@@ -189,13 +218,13 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
         <button onClick={handleLogout} disabled={loggingOut} className="scala-button" style={{ width: '100%', marginTop: 26 }}>Cerrar sesión</button>
       </aside>
 
-      <section style={{ background: 'var(--ink-1)', borderRight: '1px solid var(--line)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <section style={{ background: 'linear-gradient(180deg, var(--ink-1), #070a12)', borderRight: '1px solid var(--line)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '18px 16px 12px', borderBottom: '1px solid var(--line)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
             <h1 style={{ margin: 0, fontSize: 22, color: 'var(--text)', fontWeight: 760 }}>Leads</h1>
             <span style={{ color: 'var(--text-3)', fontSize: 12 }}>{filtered.length} / {leads.length}</span>
           </div>
-          <input data-scala-search value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nombre, teléfono, ambiente..." style={{ width: '100%', background: 'var(--ink-2)', border: '1px solid var(--line)', color: 'var(--text)', borderRadius: 12, padding: '10px 12px', outline: 'none' }} />
+          <input data-scala-search value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nombre, teléfono, ambiente..." style={{ width: '100%', background: 'var(--ink-3)', border: '1px solid var(--line)', color: 'var(--text)', borderRadius: 14, padding: '11px 12px', outline: 'none' }} />
           <div style={{ display: 'flex', gap: 7, overflowX: 'auto', marginTop: 12, paddingBottom: 4 }}>
             {FILTERS.map((filter) => (
               <button key={filter.key} onClick={() => setActiveFilter(filter.key)} className="scala-button" style={{ flexShrink: 0, minHeight: 32, background: activeFilter === filter.key ? 'var(--blue)' : 'var(--ink-2)', borderColor: activeFilter === filter.key ? 'var(--blue)' : 'var(--line)', color: activeFilter === filter.key ? 'white' : 'var(--text-2)' }}>
@@ -206,7 +235,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 8px 12px' }}>
-          <div style={{ position: 'sticky', top: -8, zIndex: 1, background: 'rgba(13,16,20,0.94)', backdropFilter: 'blur(10px)', padding: '10px 8px' }}>
+          <div style={{ position: 'sticky', top: -8, zIndex: 1, background: 'rgba(8,11,20,0.94)', backdropFilter: 'blur(10px)', padding: '10px 8px' }}>
             <span style={{ color: 'var(--text-3)', fontSize: 12 }}>Ahora</span>
           </div>
           {filtered.length ? filtered.map((lead) => (
@@ -248,10 +277,10 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
 
 function SideItem({ color, label, count, active, onClick }: { color: string; label: string; count: number; active?: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} style={{ display: 'grid', gridTemplateColumns: '10px 1fr auto', alignItems: 'center', gap: 8, border: '1px solid transparent', borderRadius: 10, background: active ? 'var(--vendor-soft)' : 'transparent', color: active ? 'var(--text)' : 'var(--text-2)', minHeight: 34, padding: '0 9px', cursor: 'pointer', textAlign: 'left' }}>
+    <button onClick={onClick} style={{ display: 'grid', gridTemplateColumns: '10px 1fr auto', alignItems: 'center', gap: 8, border: active ? '1px solid rgba(37,99,235,0.28)' : '1px solid transparent', borderRadius: 12, background: active ? 'rgba(37,99,235,0.14)' : 'transparent', color: active ? 'var(--text)' : 'var(--text-2)', minHeight: 36, padding: '0 10px', cursor: 'pointer', textAlign: 'left' }}>
       <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
       <span style={{ fontSize: 12 }}>{label}</span>
-      <span style={{ minWidth: 22, textAlign: 'center', borderRadius: 999, background: active ? 'var(--blue)' : 'var(--ink-3)', color: active ? 'white' : color, fontSize: 11, fontWeight: 700 }}>{count}</span>
+      <span style={{ minWidth: 22, textAlign: 'center', borderRadius: 999, background: active ? 'var(--blue)' : 'rgba(255,255,255,0.055)', color: active ? 'white' : color, fontSize: 11, fontWeight: 700 }}>{count}</span>
     </button>
   );
 }
@@ -266,8 +295,8 @@ function LeadCard({ lead, selected, lastMessage, onClick }: { lead: AirtableLead
   const needsHuman = state.needsHuman || lastMessage?.role === 'user';
 
   return (
-    <button onClick={onClick} style={{ width: '100%', display: 'grid', gridTemplateColumns: '40px 1fr auto', gap: 11, border: `1px solid ${selected ? 'rgba(84,142,226,0.34)' : 'transparent'}`, borderRadius: 14, background: selected ? 'rgba(24,93,232,0.13)' : 'transparent', padding: '12px 10px', cursor: 'pointer', textAlign: 'left', marginBottom: 6 }}>
-      <div style={{ position: 'relative', width: 40, height: 40, borderRadius: 12, background: 'var(--ink-5)', display: 'grid', placeItems: 'center', color: 'var(--text)', fontFamily: 'var(--display)' }}>
+    <button onClick={onClick} style={{ width: '100%', display: 'grid', gridTemplateColumns: '40px 1fr auto', gap: 11, border: `1px solid ${selected ? 'rgba(96,165,250,0.28)' : 'transparent'}`, borderRadius: 16, background: selected ? 'linear-gradient(135deg, rgba(37,99,235,0.16), rgba(255,255,255,0.025))' : 'transparent', boxShadow: selected ? 'inset 0 0 0 1px rgba(37,99,235,0.05)' : 'none', padding: '12px 10px', cursor: 'pointer', textAlign: 'left', marginBottom: 7 }}>
+      <div style={{ position: 'relative', width: 40, height: 40, borderRadius: 14, background: 'var(--ink-5)', display: 'grid', placeItems: 'center', color: 'var(--text)', fontFamily: 'var(--display)' }}>
         {initial}
         <span style={{ position: 'absolute', right: -2, bottom: -2, width: 12, height: 12, borderRadius: '50%', background: pip, border: '2px solid var(--ink-1)' }} />
       </div>
@@ -279,7 +308,7 @@ function LeadCard({ lead, selected, lastMessage, onClick }: { lead: AirtableLead
         <div style={{ color: action.color, fontSize: 12, fontWeight: 700, marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {action.prefix}: {action.label}
         </div>
-        <p style={{ color: 'var(--text-3)', fontSize: 12, margin: '5px 0 9px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{preview}</p>
+        <p style={{ color: 'var(--text-3)', fontSize: 12, margin: '6px 0 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.35 }}>{preview}</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <StageTag stage={lead.current_stage} />
           <IntentBar state={state} />

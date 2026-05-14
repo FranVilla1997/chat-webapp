@@ -76,7 +76,7 @@ export function BotPauseControl({ recordId, initialResumeAt, onPause, onResume, 
         {isPaused && (
           <span style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '6px 10px', borderRadius: 8,
+            padding: '7px 11px', borderRadius: 999,
             background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)',
             color: '#fbbf24', fontSize: 11, fontWeight: 700,
           }}>
@@ -89,12 +89,11 @@ export function BotPauseControl({ recordId, initialResumeAt, onPause, onResume, 
             onClick={() => void resumeBot()}
             disabled={busy}
             style={{
-              padding: '7px 14px', borderRadius: 5,
-              border: '1px solid rgba(107,221,161,0.45)',
-              background: 'rgba(107,221,161,0.08)',
-              color: '#6bdda1', fontSize: 11, fontWeight: 700,
+              padding: '8px 14px', borderRadius: 10,
+              border: '1px solid rgba(53,229,138,0.22)',
+              background: 'rgba(53,229,138,0.08)',
+              color: 'var(--green)', fontSize: 12, fontWeight: 700,
               cursor: busy ? 'not-allowed' : 'pointer',
-              letterSpacing: '0.06em', textTransform: 'uppercase',
             }}
           >
             {busy ? 'Reanudando...' : 'Reanudar bot'}
@@ -105,12 +104,11 @@ export function BotPauseControl({ recordId, initialResumeAt, onPause, onResume, 
             onClick={() => setOpen(true)}
             disabled={busy}
             style={{
-              padding: '7px 14px', borderRadius: 5,
+              padding: '8px 14px', borderRadius: 10,
               border: '1px solid rgba(245,158,11,0.35)',
               background: 'rgba(245,158,11,0.08)',
-              color: '#fbbf24', fontSize: 11, fontWeight: 700,
+              color: 'var(--warm)', fontSize: 12, fontWeight: 700,
               cursor: busy ? 'not-allowed' : 'pointer',
-              letterSpacing: '0.06em', textTransform: 'uppercase',
             }}
           >
             {busy ? 'Pausando...' : 'Pausar bot'}
@@ -127,16 +125,16 @@ export function BotPauseControl({ recordId, initialResumeAt, onPause, onResume, 
         }}>
           <div style={{
             width: '100%', maxWidth: 420,
-            background: '#0f0f18',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 12,
+            background: 'var(--ink-3)',
+            border: '1px solid var(--line)',
+            borderRadius: 16,
             boxShadow: '0 20px 80px rgba(0,0,0,0.5)',
             padding: 18,
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
               <div>
-                <h2 style={{ color: '#f0f0f5', fontSize: 16, margin: 0 }}>Pausar bot</h2>
-                <p style={{ color: 'rgba(255,255,255,0.42)', fontSize: 12, margin: '5px 0 0' }}>
+                <h2 style={{ color: 'var(--text)', fontSize: 16, margin: 0 }}>Pausar bot</h2>
+                <p style={{ color: 'var(--text-3)', fontSize: 12, margin: '5px 0 0' }}>
                   Elegí cuánto tiempo Sentinel queda sin responder este lead.
                 </p>
               </div>
@@ -158,9 +156,9 @@ export function BotPauseControl({ recordId, initialResumeAt, onPause, onResume, 
                   onClick={() => void applyPause(new Date(Date.now() + option.minutes * 60 * 1000))}
                   style={{
                     padding: '10px 12px', borderRadius: 8,
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    background: 'rgba(255,255,255,0.04)',
-                    color: '#f0f0f5', fontWeight: 700, cursor: busy ? 'not-allowed' : 'pointer',
+                    border: '1px solid var(--line)',
+                    background: 'rgba(255,255,255,0.035)',
+                    color: 'var(--text)', fontWeight: 700, cursor: busy ? 'not-allowed' : 'pointer',
                   }}
                 >
                   {option.label}
@@ -169,7 +167,7 @@ export function BotPauseControl({ recordId, initialResumeAt, onPause, onResume, 
             </div>
 
             <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-              <label style={{ display: 'grid', gap: 7, color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              <label style={{ display: 'grid', gap: 7, color: 'var(--text-3)', fontSize: 12, fontWeight: 700 }}>
                 Fecha y hora específica
                 <input
                   type="datetime-local"
@@ -177,8 +175,8 @@ export function BotPauseControl({ recordId, initialResumeAt, onPause, onResume, 
                   min={toLocalDatetimeValue(new Date(Date.now() + 60_000))}
                   onChange={(event) => setCustomValue(event.target.value)}
                   style={{
-                    background: '#151521', color: '#f0f0f5',
-                    border: '1px solid rgba(255,255,255,0.12)',
+                    background: 'var(--ink-4)', color: 'var(--text)',
+                    border: '1px solid var(--line)',
                     borderRadius: 8, padding: '10px 12px', fontSize: 13,
                   }}
                 />

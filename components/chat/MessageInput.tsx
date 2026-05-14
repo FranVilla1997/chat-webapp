@@ -216,10 +216,10 @@ export function MessageInput({
         alignItems: 'flex-end',
         gap: 10,
         background: 'var(--ink-3)',
-        border: focused ? '1px solid var(--blue-300)' : '1px solid var(--line)',
+        border: focused ? '1px solid rgba(96,165,250,0.42)' : '1px solid var(--line)',
         borderRadius: 'var(--radius-lg)',
         padding: '11px 11px 11px 14px',
-        boxShadow: focused ? '0 0 0 4px rgba(24,93,232,0.12)' : 'none',
+        boxShadow: focused ? '0 0 0 4px rgba(37,99,235,0.12)' : 'none',
       }}>
         <textarea
           ref={textareaRef}

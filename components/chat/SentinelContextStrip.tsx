@@ -30,7 +30,7 @@ export function SentinelContextStrip({ state, onTakeControl, onQuote }: Sentinel
   return (
     <section style={{
       borderBottom: '1px solid var(--line)',
-      background: 'var(--ink-1)',
+      background: 'linear-gradient(90deg, rgba(37,99,235,0.08), rgba(8,11,20,0.96) 58%)',
       padding: '14px 22px',
       display: 'flex',
       alignItems: 'center',

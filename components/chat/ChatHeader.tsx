@@ -53,22 +53,22 @@ export function ChatHeader({
   return (
     <header style={{
       borderBottom: '1px solid var(--line)',
-      background: 'linear-gradient(180deg, #11161d 0%, var(--ink-2) 100%)',
-      padding: '18px 22px',
+      background: 'linear-gradient(180deg, rgba(11,16,32,0.98) 0%, rgba(8,11,20,0.98) 100%)',
+      padding: '16px 22px 14px',
       display: 'grid',
-      gap: 16,
+      gap: 14,
     }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
           {onBack && <button aria-label="Volver" onClick={onBack} className="scala-button" style={{ width: 36, padding: 0 }}>‹</button>}
           <div style={{
             width: 44,
             height: 44,
-            borderRadius: 12,
+            borderRadius: 14,
             display: 'grid',
             placeItems: 'center',
-            background: 'linear-gradient(135deg, #222a36, #171d26)',
-            border: '1px solid var(--line-2)',
+            background: 'linear-gradient(135deg, rgba(37,99,235,0.24), rgba(255,255,255,0.04))',
+            border: '1px solid var(--line)',
             color: 'var(--text)',
             fontFamily: 'var(--display)',
             fontSize: 17,
@@ -78,10 +78,10 @@ export function ChatHeader({
           </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0, flexWrap: 'wrap' }}>
-              <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 18, fontWeight: 750, letterSpacing: '-0.01em' }}>
+              <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 19, fontWeight: 760, letterSpacing: '-0.01em' }}>
                 {displayName}
               </h2>
-              <span style={{ border: '1px solid var(--line-2)', borderRadius: 999, color: 'var(--text-3)', padding: '4px 8px', fontSize: 11 }}>
+              <span style={{ border: '1px solid var(--line)', borderRadius: 999, color: 'var(--text-2)', padding: '4px 9px', fontSize: 11 }}>
                 WhatsApp
               </span>
               {leadInfo?.stage && <StageTag stage={leadInfo.stage} />}
@@ -102,8 +102,8 @@ export function ChatHeader({
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            border: '1px solid rgba(107,221,161,0.24)',
-            background: 'rgba(107,221,161,0.08)',
+            border: '1px solid rgba(53,229,138,0.18)',
+            background: 'rgba(53,229,138,0.08)',
             color: 'var(--text)',
             borderRadius: 999,
             padding: '8px 11px',
@@ -135,7 +135,7 @@ export function ChatHeader({
 
 function HeaderMetric({ label, value, warm }: { label: string; value: string; warm?: boolean }) {
   return (
-    <div style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '10px 12px', minWidth: 0 }}>
+    <div style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid var(--line)', borderRadius: 14, padding: '10px 12px', minWidth: 0 }}>
       <div style={{ color: 'var(--text-4)', fontSize: 11, marginBottom: 4 }}>{label}</div>
       <div style={{ color: warm ? 'var(--warm)' : 'var(--text)', fontSize: 13, fontWeight: 680, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {value}

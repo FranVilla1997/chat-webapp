@@ -38,38 +38,39 @@
 }
 
 :root {
-  --blue: #185de8;
-  --blue-700: #0b3c89;
-  --blue-300: #548ee2;
-  --blue-200: #88adea;
-  --green: #6bdda1;
-  --green-700: #3b7a58;
-  --green-300: #83cca1;
-  --ink-0: #080a0d;
-  --ink-1: #0d1014;
-  --ink-2: #111418;
-  --ink-3: #161a20;
-  --ink-4: #1b2028;
-  --ink-5: #202632;
-  --line: #252a32;
-  --line-2: #323946;
-  --text: #f2f4f7;
-  --text-2: #c7ced8;
-  --text-3: #98a2b3;
-  --text-4: #667085;
-  --warm: #ffae5c;
-  --hot: #ff6b6b;
-  --vendor-soft: rgba(24, 93, 232, 0.14);
-  --sentinel-soft: rgba(107, 221, 161, 0.08);
-  --warm-soft: rgba(255, 174, 92, 0.12);
-  --hot-soft: rgba(255, 107, 107, 0.1);
+  --blue: #2563eb;
+  --blue-700: #1d4ed8;
+  --blue-300: #60a5fa;
+  --blue-200: #93c5fd;
+  --green: #35e58a;
+  --green-700: #14804a;
+  --green-300: #7df0b4;
+  --ink-0: #05070d;
+  --ink-1: #080b14;
+  --ink-2: #0b1020;
+  --ink-3: #0f131d;
+  --ink-4: #131824;
+  --ink-5: #171d2b;
+  --line: rgba(255,255,255,0.06);
+  --line-2: #1e2533;
+  --text: #f4f7fb;
+  --text-2: #a4adbd;
+  --text-3: #6f7a8c;
+  --text-4: #4d5565;
+  --warm: #f59e0b;
+  --hot: #ef4444;
+  --vendor-soft: rgba(37, 99, 235, 0.14);
+  --sentinel-soft: rgba(53, 229, 138, 0.1);
+  --warm-soft: rgba(245, 158, 11, 0.12);
+  --hot-soft: rgba(239, 68, 68, 0.1);
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
-  --shadow-soft: 0 18px 60px rgba(0, 0, 0, 0.28);
-  --display: 'VennDisplay', 'Venn', 'Helvetica Neue', Arial, sans-serif;
-  --alt: 'Venn', 'Helvetica Neue', Arial, sans-serif;
-  --sans: 'Helvetica Neue', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --shadow-soft: 0 22px 70px rgba(0, 0, 0, 0.34);
+  --shadow-blue: 0 14px 44px rgba(37, 99, 235, 0.16);
+  --display: 'VennDisplay', 'Venn', Inter, system-ui, sans-serif;
+  --alt: 'Venn', Inter, system-ui, sans-serif;
+  --sans: 'Venn', Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
@@ -105,7 +106,7 @@ a:focus-visible {
 }
 
 ::selection {
-  background: rgba(24, 93, 232, 0.45);
+  background: rgba(37, 99, 235, 0.45);
   color: white;
 }
 
@@ -127,14 +128,14 @@ a:focus-visible {
 }
 
 .scala-panel {
-  background: var(--ink-2);
+  background: var(--ink-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
 }
 
 .scala-button {
-  border: 1px solid var(--line-2);
-  background: #171c23;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.035);
   color: var(--text);
   border-radius: 10px;
   min-height: 36px;
@@ -152,6 +153,7 @@ a:focus-visible {
   border-color: var(--blue);
   background: var(--blue);
   color: white;
+  box-shadow: var(--shadow-blue);
 }
 
 .scala-button-warm {
@@ -161,8 +163,8 @@ a:focus-visible {
 }
 
 .scala-button:hover:not(:disabled) {
-  border-color: var(--blue-300);
-  background: #1d2430;
+  border-color: rgba(96,165,250,0.38);
+  background: rgba(37,99,235,0.12);
   transform: translateY(-1px);
 }
 

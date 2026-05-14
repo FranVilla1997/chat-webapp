@@ -1,10 +1,10 @@
 const STAGE: Record<string, { label: string; color: string; bg: string }> = {
-  nuevo: { label: 'Nuevo', color: 'var(--blue-200)', bg: 'rgba(24,93,232,0.18)' },
-  en_calificacion: { label: 'Calificando', color: 'var(--green)', bg: 'rgba(107,221,161,0.14)' },
-  calificado: { label: 'Calificado', color: 'var(--blue-200)', bg: 'rgba(24,93,232,0.22)' },
-  propuesta_enviada: { label: 'Propuesta', color: 'var(--warm)', bg: 'rgba(255,174,92,0.16)' },
-  cerrado_ganado: { label: 'Ganado', color: 'var(--green)', bg: 'rgba(107,221,161,0.16)' },
-  cerrado_perdido: { label: 'Perdido', color: 'var(--hot)', bg: 'rgba(255,107,107,0.14)' },
+  nuevo: { label: 'Nuevo', color: 'var(--blue-200)', bg: 'rgba(37,99,235,0.16)' },
+  en_calificacion: { label: 'Calificando', color: 'var(--text-2)', bg: 'rgba(255,255,255,0.055)' },
+  calificado: { label: 'Calificado', color: 'var(--blue-200)', bg: 'rgba(37,99,235,0.2)' },
+  propuesta_enviada: { label: 'Propuesta', color: 'var(--warm)', bg: 'rgba(245,158,11,0.14)' },
+  cerrado_ganado: { label: 'Ganado', color: 'var(--green)', bg: 'rgba(53,229,138,0.14)' },
+  cerrado_perdido: { label: 'Perdido', color: 'var(--hot)', bg: 'rgba(239,68,68,0.14)' },
   no_responde: { label: 'No responde', color: 'var(--text-3)', bg: 'var(--ink-5)' },
 };
 

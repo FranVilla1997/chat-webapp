@@ -31,10 +31,54 @@ function buildSummary(lead: LeadInfo, state: SentinelState) {
   const zone = getField(lead, 'Zona');
   const interest = product ? `Mostró interés en ${product}.` : 'Todavía no definió sistema o producto.';
   const missing: string[] = [];
+
   if (!measures) missing.push('medidas');
   if (!zone) missing.push('zona');
   if (!product) missing.push('sistema');
+
   return `${interest} ${missing.length ? `Falta confirmar ${missing.join(', ')}.` : 'Tiene los datos principales para avanzar.'} Confianza IA ${state.confidence}%.`;
+}
+
+function normalizeMeasureItem(item: string) {
+  return item
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/^(\d+)\s+(?:de|x|×)\s+(\d+(?:[,.]\d+)?)\s*x\s*(\d+(?:[,.]\d+)?)(?:\s*cm)?$/i, '$1 × $2 x $3 cm');
+}
+
+function formatMeasurements(value?: string) {
+  if (!value) return undefined;
+  const text = value.replace(/×/g, 'x').trim();
+  const labelPattern = /([A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+):/g;
+  const matches = Array.from(text.matchAll(labelPattern));
+
+  if (!matches.length) return text;
+
+  const groups = matches.map((match, index) => {
+    const label = match[1].trim();
+    const start = (match.index ?? 0) + match[0].length;
+    const end = matches[index + 1]?.index ?? text.length;
+    const body = text.slice(start, end).replace(/[.;]\s*$/, '').trim();
+    const items = body
+      .split(/,\s*/)
+      .map(normalizeMeasureItem)
+      .filter(Boolean);
+
+    return { label, items };
+  });
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      {groups.map((group) => (
+        <div key={group.label}>
+          <div style={{ color: 'var(--text)', fontWeight: 740, marginBottom: 3 }}>{group.label}</div>
+          <div style={{ display: 'grid', gap: 2, color: 'var(--text-2)', fontWeight: 520 }}>
+            {group.items.map((item) => <span key={item}>• {item}</span>)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function LeadPanel({ lead, followups, open, onClose, sentinelState }: LeadPanelProps) {
@@ -50,13 +94,13 @@ export function LeadPanel({ lead, followups, open, onClose, sentinelState }: Lea
     <aside style={{ width: open ? 320 : 0, minWidth: open ? 320 : 0, overflow: 'hidden', transition: 'width .2s ease, min-width .2s ease', borderLeft: open ? '1px solid var(--line)' : 'none', background: 'var(--ink-1)', flexShrink: 0 }}>
       <div style={{ width: 320, height: '100%', overflowY: 'auto', padding: 16, display: 'grid', gap: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 16 }}>Info del lead</h2>
+          <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 16, fontWeight: 760 }}>Info del lead</h2>
           <button onClick={onClose} aria-label="Cerrar info del lead" style={{ border: 'none', background: 'transparent', color: 'var(--text-3)', cursor: 'pointer', fontSize: 18 }}>×</button>
         </div>
 
         <section className="scala-panel" style={{ padding: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 12, display: 'grid', placeItems: 'center', background: 'var(--ink-5)', border: '1px solid var(--line-2)', fontFamily: 'var(--display)', fontSize: 16 }}>{initial}</div>
+            <div style={{ width: 42, height: 42, borderRadius: 14, display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, rgba(37,99,235,0.2), rgba(255,255,255,0.04))', border: '1px solid var(--line)', fontFamily: 'var(--display)', fontSize: 16 }}>{initial}</div>
             <div style={{ minWidth: 0 }}>
               <strong style={{ display: 'block', color: 'var(--text)', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.name ?? 'Sin nombre'}</strong>
               <span style={{ color: 'var(--text-3)', fontSize: 12 }}>{formatPhone(lead.phone)}</span>
@@ -71,14 +115,14 @@ export function LeadPanel({ lead, followups, open, onClose, sentinelState }: Lea
 
         <section className="scala-panel" style={{ padding: 14 }}>
           <Eyebrow>Resumen del lead</Eyebrow>
-          <p style={{ margin: '10px 0 0', color: 'var(--text-2)', fontSize: 13, lineHeight: 1.55 }}>
+          <p style={{ margin: '10px 0 0', color: 'var(--text-2)', fontSize: 13, lineHeight: 1.58 }}>
             {buildSummary(lead, sentinelState)}
           </p>
         </section>
 
-        <section style={{ border: '1px solid rgba(24,93,232,0.28)', background: 'rgba(24,93,232,0.1)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+        <section style={{ border: '1px solid rgba(96,165,250,0.18)', background: 'linear-gradient(135deg, rgba(37,99,235,0.12), rgba(255,255,255,0.025))', borderRadius: 'var(--radius-md)', padding: 14 }}>
           <div style={{ color: 'var(--blue-200)', fontSize: 12, fontWeight: 750, marginBottom: 8 }}>Próxima mejor acción</div>
-          <p style={{ margin: 0, color: 'var(--text)', fontSize: 14, lineHeight: 1.45 }}>{nextAction}</p>
+          <p style={{ margin: 0, color: 'var(--text)', fontSize: 14, lineHeight: 1.48 }}>{nextAction}</p>
         </section>
 
         <section className="scala-panel" style={{ padding: 14 }}>
@@ -94,7 +138,7 @@ export function LeadPanel({ lead, followups, open, onClose, sentinelState }: Lea
             <FactCard span={2} label="Etapa" value={`Nuevo → ${stageLabel(lead.stage)}`} />
             <FactCard label="Producto" value={lead.productType ?? getField(lead, 'Producto')} />
             <FactCard label="Ambiente" value={getField(lead, 'Ambiente')} />
-            <FactCard label="Medidas" value={lead.measurementsInfo ?? getField(lead, 'Medidas')} />
+            <FactCard span={2} label="Medidas" value={formatMeasurements(lead.measurementsInfo ?? getField(lead, 'Medidas'))} />
             <FactCard label="Zona" value={getField(lead, 'Zona')} />
             <FactCard label="Presupuesto" value={getField(lead, 'Presupuesto')} />
             <FactCard label="Plazo" value={getField(lead, 'Urgencia')} />
@@ -111,7 +155,7 @@ export function LeadPanel({ lead, followups, open, onClose, sentinelState }: Lea
 
         <section style={{ padding: '4px 2px 12px' }}>
           <Eyebrow>Historial</Eyebrow>
-          <div style={{ marginTop: 12, display: 'grid', gap: 10, opacity: 0.72 }}>
+          <div style={{ marginTop: 12, display: 'grid', gap: 10, opacity: 0.68 }}>
             <TimelineItem color="var(--green)" time="Hace 2 min">Sentinel mostró catálogo de sistemas.</TimelineItem>
             <TimelineItem color="var(--text-4)" time="Hace 4 min">Lead pidió más información.</TimelineItem>
           </div>

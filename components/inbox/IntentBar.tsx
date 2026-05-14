@@ -9,7 +9,7 @@ export function IntentBar({ state }: { state: SentinelState }) {
           position: 'absolute',
           inset: '0 auto 0 0',
           width: `${fill}%`,
-          background: 'linear-gradient(90deg, var(--green), var(--warm), var(--hot))',
+          background: state.temperature === 'caliente' ? 'var(--green)' : state.temperature === 'tibio' ? 'var(--blue-300)' : 'var(--text-4)',
         }} />
       </span>
       <span style={{ color: state.temperature === 'caliente' ? 'var(--hot)' : state.temperature === 'tibio' ? 'var(--text-2)' : 'var(--text-3)', fontSize: 11, fontWeight: 650, textTransform: 'capitalize' }}>
