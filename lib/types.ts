@@ -40,6 +40,30 @@ export interface LeadInfo {
   fields?: LeadField[];
 }
 
+export type LeadPriority = 'normal' | 'needs_human' | 'stuck' | 'hot';
+
+export type SentinelGoal = 'saludar' | 'calificar' | 'catalogo' | 'medidas' | 'presupuesto' | 'seguimiento';
+
+export interface SentinelState {
+  currentGoal: SentinelGoal;
+  currentAction: string;
+  missingFacts: string[];
+  confidence: number;
+  intentScore: number;
+  temperature: 'frio' | 'tibio' | 'caliente';
+  needsHuman: boolean;
+  needsHumanReason?: string;
+  nextAction?: string;
+  priority: LeadPriority;
+}
+
+export interface AiSuggestion {
+  id: string;
+  text: string;
+  reason?: string;
+  confidence?: number;
+}
+
 export interface SellerProfile {
   id: string;
   user_id: string;

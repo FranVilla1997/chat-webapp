@@ -1,11 +1,16 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
-import { ChatContainer } from './ChatContainer';
 import { buildLeadInfoFromAirtable } from '@/lib/utils';
+import { deriveSentinelState } from '@/lib/sentinel/deriveSentinelState';
+import { Logo } from '@/components/brand/Logo';
+import { StairsAccent } from '@/components/brand/StairsAccent';
+import { Eyebrow } from '@/components/brand/Eyebrow';
+import { StageTag } from '@/components/inbox/StageTag';
+import { IntentBar } from '@/components/inbox/IntentBar';
+import { ChatContainer } from './ChatContainer';
 import type { AirtableLead } from '@/lib/types';
 import type { LastMessage } from '@/app/chats/page';
 
@@ -18,149 +23,122 @@ interface ChatListProps {
   airtableTableId?: string;
 }
 
-const MONO = `'SF Mono', 'Consolas', 'Liberation Mono', monospace`;
-
-/* ── Etapas del embudo ── */
-const FUNNEL: { key: string; label: string; color: string }[] = [
-  { key: 'all',              label: 'Todos',            color: '#848484' },
-  { key: 'calificado',       label: 'Calificado',       color: '#6bdda1' },
-  { key: 'en_calificacion',  label: 'Calificando',      color: '#f59e0b' },
-  { key: 'propuesta_enviada',label: 'Propuesta',        color: '#185de8' },
-  { key: 'nuevo',            label: 'Nuevo',            color: '#3b7ef5' },
-  { key: 'en_proceso',       label: 'En proceso',       color: '#f59e0b' },
-  { key: 'no_responde',      label: 'No responde',      color: '#848484' },
-  { key: 'cerrado_ganado',   label: 'Ganado',           color: '#6bdda1' },
-  { key: 'cerrado_perdido',  label: 'Perdido',          color: '#e53e3e' },
+const STAGES = [
+  { key: 'nuevo', label: 'Nuevo' },
+  { key: 'en_calificacion', label: 'Calificando' },
+  { key: 'calificado', label: 'Calificado' },
+  { key: 'propuesta_enviada', label: 'Propuesta' },
+  { key: 'cerrado_ganado', label: 'Ganado' },
 ];
 
-const STAGE_BADGE: Record<string, { bg: string; color: string }> = {
-  calificado:        { bg: 'rgba(107,221,161,0.10)', color: '#6bdda1' },
-  en_calificacion:   { bg: 'rgba(245,158,11,0.10)',  color: '#f59e0b' },
-  propuesta_enviada: { bg: 'rgba(24,93,232,0.10)',   color: '#185de8' },
-  nuevo:             { bg: 'rgba(59,126,245,0.10)',  color: '#3b7ef5' },
-  en_proceso:        { bg: 'rgba(245,158,11,0.10)',  color: '#f59e0b' },
-  no_responde:       { bg: 'rgba(132,132,132,0.10)', color: '#848484' },
-  cerrado_ganado:    { bg: 'rgba(107,221,161,0.10)', color: '#6bdda1' },
-  cerrado_perdido:   { bg: 'rgba(229,62,62,0.10)',   color: '#e53e3e' },
-};
+const FILTERS = [
+  { key: 'all', label: 'Todos' },
+  { key: 'needs', label: 'Necesitan vos' },
+  { key: 'bot', label: 'Bot activo' },
+  { key: 'hot', label: 'Calientes' },
+  { key: 'old', label: 'Sin actividad 24h' },
+];
 
 function formatTime(iso: string) {
   if (!iso) return '';
-  const d = new Date(iso);
+  const date = new Date(iso);
   const now = new Date();
-  const diff = now.getTime() - d.getTime();
-  if (diff < 3600000 * 24 && d.getDate() === now.getDate())
-    return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
-  if (diff < 3600000 * 48) return 'Ayer';
-  return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+  if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  const yesterday = new Date(now.getTime() - 86400000);
+  if (date.toDateString() === yesterday.toDateString()) return 'Ayer';
+  return date.toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' });
 }
 
-interface Toast {
-  id: string;
-  lead: AirtableLead;
-  content: string;
+function olderThan24h(iso?: string) {
+  if (!iso) return false;
+  return Date.now() - new Date(iso).getTime() > 24 * 60 * 60 * 1000;
+}
+
+function getCurrentAction(lead: AirtableLead) {
+  const state = deriveSentinelState(lead);
+  if (state.priority === 'stuck') return { label: 'Bot trabado · respondió "False. False."', color: 'var(--warm)', prefix: '⚠' };
+  if (state.currentGoal === 'presupuesto') return { label: 'listo para presupuesto', color: 'var(--hot)', prefix: '◆' };
+  return { label: state.currentAction, color: 'var(--green)', prefix: 'Sentinel' };
 }
 
 export function ChatList({ initialLeads, sellerName, clientId, lastMessages, airtableBaseId, airtableTableId }: ChatListProps) {
   const router = useRouter();
-  const [leads, setLeads] = useState<AirtableLead[]>(initialLeads);
-  const [newLeadIds, setNewLeadIds] = useState<Set<string>>(new Set());
-  const [activeStage, setActiveStage] = useState('all');
-  const [selectedLead, setSelectedLead] = useState<AirtableLead | null>(null);
-  const [msgPreviews, setMsgPreviews] = useState<Record<string, LastMessage>>(lastMessages);
-  const [seenAt, setSeenAt] = useState<Record<string, string>>({});
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [leads, setLeads] = useState(initialLeads);
+  const [selectedLead, setSelectedLead] = useState<AirtableLead | null>(initialLeads[0] ?? null);
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [activeStage, setActiveStage] = useState('nuevo');
   const [search, setSearch] = useState('');
+  const [msgPreviews, setMsgPreviews] = useState(lastMessages);
   const [loggingOut, setLoggingOut] = useState(false);
   const leadsRef = useRef(leads);
   leadsRef.current = leads;
-  const selectedLeadRef = useRef(selectedLead);
-  selectedLeadRef.current = selectedLead;
 
-  useEffect(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem('scala_seen_leads') ?? '{}');
-      setSeenAt(stored);
-    } catch { /* empty */ }
-  }, []);
-
-  // Realtime: nuevos leads
   useEffect(() => {
     const channel = supabase
       .channel('lead-notifications')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lead_notifications' },
-        async (payload) => {
-          const notifClientId = (payload.new as { client_id?: string }).client_id;
-          if (clientId && notifClientId && notifClientId !== clientId) return;
-          const params = new URLSearchParams();
-          if (airtableBaseId) params.set('airtable_base_id', airtableBaseId);
-          if (airtableTableId) params.set('airtable_table_id', airtableTableId);
-          const res = await fetch(`/api/leads${params.size ? `?${params.toString()}` : ''}`);
-          if (!res.ok) return;
-          const { leads: fresh } = await res.json() as { leads: AirtableLead[] };
-          const currentIds = new Set(leadsRef.current.map(l => l.RecordID));
-          const added = fresh.filter(l => !currentIds.has(l.RecordID)).map(l => l.RecordID);
-          setLeads(fresh);
-          if (added.length > 0) setNewLeadIds(prev => new Set([...prev, ...added]));
-        }
-      )
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lead_notifications' }, async (payload) => {
+        const notifClientId = (payload.new as { client_id?: string }).client_id;
+        if (clientId && notifClientId && notifClientId !== clientId) return;
+        const params = new URLSearchParams();
+        if (airtableBaseId) params.set('airtable_base_id', airtableBaseId);
+        if (airtableTableId) params.set('airtable_table_id', airtableTableId);
+        const res = await fetch(`/api/leads${params.size ? `?${params.toString()}` : ''}`);
+        if (!res.ok) return;
+        const { leads: fresh } = await res.json() as { leads: AirtableLead[] };
+        setLeads(fresh);
+        if (!selectedLead && fresh.length) setSelectedLead(fresh[0]);
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [clientId, airtableBaseId, airtableTableId]);
+  }, [clientId, airtableBaseId, airtableTableId, selectedLead]);
 
-  // Realtime: nuevos mensajes en cualquier lead
   useEffect(() => {
     const channel = supabase
       .channel('new-messages')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
-        (payload) => {
-          const msg = payload.new as { lead_id: string; role: string; content: string; created_at: string; client_id: string };
-          // Solo mensajes del lead (no bot/agente)
-          if (msg.role !== 'user') return;
-          // Solo leads de este vendedor
-          const lead = leadsRef.current.find(l => l.RecordID === msg.lead_id);
-          if (!lead) return;
-
-          // Actualizar preview del mensaje
-          setMsgPreviews(prev => ({
-            ...prev,
-            [msg.lead_id]: { content: msg.content, role: msg.role, created_at: msg.created_at },
-          }));
-
-          // Toast solo si el chat no está abierto
-          if (selectedLeadRef.current?.RecordID !== msg.lead_id) {
-            const toastId = `${msg.lead_id}-${Date.now()}`;
-            setToasts(prev => [...prev.slice(-2), { id: toastId, lead, content: msg.content }]);
-            setTimeout(() => setToasts(prev => prev.filter(t => t.id !== toastId)), 8000);
-          }
-        }
-      )
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        const msg = payload.new as { lead_id: string; role: string; content: string; created_at: string };
+        if (!leadsRef.current.some((lead) => lead.RecordID === msg.lead_id)) return;
+        setMsgPreviews((prev) => ({ ...prev, [msg.lead_id]: { content: msg.content, role: msg.role, created_at: msg.created_at } }));
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);
 
   const counts = useMemo(() => {
-    const m: Record<string, number> = { all: leads.length };
-    for (const l of leads) m[l.current_stage] = (m[l.current_stage] ?? 0) + 1;
-    return m;
+    const byStage: Record<string, number> = {};
+    let needs = 0;
+    let stuck = 0;
+    let hot = 0;
+    for (const lead of leads) {
+      byStage[lead.current_stage] = (byStage[lead.current_stage] ?? 0) + 1;
+      const state = deriveSentinelState(lead);
+      if (state.needsHuman) needs += 1;
+      if (state.priority === 'stuck') stuck += 1;
+      if (state.priority === 'hot') hot += 1;
+    }
+    return { byStage, needs, stuck, hot };
   }, [leads]);
 
   const filtered = useMemo(() => {
-    const list = leads.filter((l) => {
-      const matchStage = activeStage === 'all' || l.current_stage === activeStage;
-      const q = search.toLowerCase();
-      const matchSearch = !q ||
-        l.whatsapp_display_name.toLowerCase().includes(q) ||
-        l.phone.includes(q) ||
-        l.name.toLowerCase().includes(q);
-      return matchStage && matchSearch;
+    const q = search.toLowerCase();
+    return leads.filter((lead) => {
+      const state = deriveSentinelState(lead);
+      const matchesSearch = !q ||
+        lead.whatsapp_display_name.toLowerCase().includes(q) ||
+        lead.name.toLowerCase().includes(q) ||
+        lead.phone.includes(q) ||
+        lead.medidas_info.toLowerCase().includes(q) ||
+        lead.tipo_producto.toLowerCase().includes(q);
+      const matchesFilter =
+        activeFilter === 'all' ||
+        (activeFilter === 'needs' && state.needsHuman) ||
+        (activeFilter === 'stuck' && state.priority === 'stuck') ||
+        (activeFilter === 'bot' && !state.needsHuman) ||
+        (activeFilter === 'hot' && state.priority === 'hot') ||
+        (activeFilter === 'old' && olderThan24h(lead.last_message_at));
+      return matchesSearch && matchesFilter;
     });
-    return list.sort((a, b) => {
-      const aNew = newLeadIds.has(a.RecordID) ? 0 : 1;
-      const bNew = newLeadIds.has(b.RecordID) ? 0 : 1;
-      return aNew - bNew;
-    });
-  }, [leads, activeStage, search, newLeadIds]);
+  }, [leads, search, activeFilter]);
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -169,323 +147,89 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
     router.refresh();
   }
 
-  const calificadosCount = counts['calificado'] ?? 0;
-
   return (
-    <div style={{ display: 'flex', height: '100svh', overflow: 'hidden', background: '#000' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '208px 306px minmax(0, 1fr)', height: '100svh', background: 'var(--ink-0)', border: '1px solid var(--line)', overflow: 'hidden' }}>
+      <aside style={{ background: 'var(--ink-1)', borderRight: '1px solid var(--line)', padding: 16, overflowY: 'auto' }}>
+        <div style={{ marginBottom: 18 }}><Logo /></div>
 
-      {/* ══ PANEL 1: Sidebar / Embudo (200px) ══ */}
-      <aside style={{
-        width: 200, flexShrink: 0,
-        borderRight: '1px solid #1e1e2a',
-        background: '#0a0a0f',
-        display: 'flex', flexDirection: 'column',
-        paddingTop: 22,
-      }}>
-        {/* Logo */}
-        <div style={{ padding: '0 18px 20px' }}>
-          <Image src="/logo/scala-logo.svg" alt="SCALA" width={64} height={8} priority
-            style={{ filter: 'brightness(0) invert(1)', opacity: 0.9 }} />
-        </div>
-
-        {/* Seller chip */}
-        {sellerName && (
-          <div style={{ padding: '0 12px 16px' }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 9,
-              padding: '8px 10px', borderRadius: 5,
-              background: '#12121a', border: '1px solid #1e1e2a',
-            }}>
-              <div style={{
-                width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
-                background: 'rgba(24,93,232,0.18)', border: '1px solid rgba(24,93,232,0.3)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 11, fontWeight: 800, color: '#185de8',
-                fontFamily: MONO,
-              }}>
-                {sellerName.charAt(0).toUpperCase()}
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <p style={{ fontSize: 12, fontWeight: 600, color: '#e4e4e8', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {sellerName}
-                </p>
-                <p style={{ fontSize: 9, color: '#848484', margin: 0, fontFamily: MONO, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Vendedor</p>
-              </div>
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid var(--line)', background: 'var(--ink-2)', padding: 10, marginBottom: 14 }}>
+          <div style={{ width: 36, height: 36, background: 'var(--ink-5)', display: 'grid', placeItems: 'center', fontFamily: 'var(--display)' }}>{sellerName?.charAt(0).toUpperCase() ?? 'S'}</div>
+          <div style={{ minWidth: 0 }}>
+            <strong style={{ display: 'block', color: 'var(--text)', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sellerName ?? 'Vendedor'}</strong>
+            <span className="scala-alt" style={{ color: 'var(--text-3)', fontSize: 9 }}>Vendedor · RC</span>
           </div>
-        )}
-
-        <div style={{ height: 1, background: '#1e1e2a', margin: '0 12px 14px' }} />
-
-        {/* Calificados CTA */}
-        {calificadosCount > 0 && (
-          <button
-            onClick={() => setActiveStage('calificado')}
-            style={{
-              margin: '0 12px 14px',
-              padding: '10px 12px',
-              borderRadius: 5,
-              border: `1px solid ${activeStage === 'calificado' ? 'rgba(107,221,161,0.4)' : 'rgba(107,221,161,0.2)'}`,
-              background: activeStage === 'calificado' ? 'rgba(107,221,161,0.1)' : 'rgba(107,221,161,0.05)',
-              cursor: 'pointer', textAlign: 'left',
-              animation: activeStage !== 'calificado' ? 'calPulse 2.5s ease-in-out infinite' : 'none',
-              transition: 'all 0.15s',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#6bdda1', letterSpacing: '0.04em' }}>Calificados</span>
-              <span style={{
-                fontSize: 11, fontWeight: 800, color: '#000',
-                background: '#6bdda1', borderRadius: 3, padding: '1px 7px',
-                fontFamily: MONO,
-              }}>{calificadosCount}</span>
-            </div>
-            <p style={{ fontSize: 10, color: 'rgba(107,221,161,0.5)', margin: '3px 0 0' }}>
-              Listos para presupuesto
-            </p>
-          </button>
-        )}
-
-        {/* Etapas label */}
-        <p style={{ fontSize: 9, fontWeight: 700, color: '#404050', letterSpacing: '0.12em', textTransform: 'uppercase', padding: '0 18px', marginBottom: 4, fontFamily: MONO }}>
-          Etapas
-        </p>
-
-        {/* Filtros */}
-        <nav style={{ flex: 1, overflowY: 'auto' }}>
-          {FUNNEL.filter(s => s.key === 'all' || (counts[s.key] ?? 0) > 0).map((s) => {
-            const isActive = activeStage === s.key;
-            const count = counts[s.key] ?? 0;
-            return (
-              <button
-                key={s.key}
-                onClick={() => setActiveStage(s.key)}
-                style={{
-                  width: '100%',
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '7px 16px',
-                  background: isActive ? '#12121a' : 'transparent',
-                  border: 'none',
-                  borderLeft: `2px solid ${isActive ? s.color : 'transparent'}`,
-                  cursor: 'pointer',
-                  transition: 'all 0.1s',
-                }}
-              >
-                <span style={{
-                  width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                  background: isActive ? s.color : '#2a2a38',
-                  boxShadow: isActive ? `0 0 6px ${s.color}66` : 'none',
-                  transition: 'all 0.1s',
-                }} />
-                <span style={{
-                  fontSize: 12, flex: 1, textAlign: 'left',
-                  color: isActive ? '#e4e4e8' : '#848484',
-                  fontWeight: isActive ? 600 : 400,
-                }}>
-                  {s.label}
-                </span>
-                <span style={{
-                  fontSize: 10, fontWeight: 700, fontFamily: MONO,
-                  color: isActive ? s.color : '#404050',
-                  background: isActive ? `${s.color}15` : 'transparent',
-                  padding: isActive ? '1px 5px' : undefined,
-                  borderRadius: 3,
-                }}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Logout */}
-        <div style={{ padding: '12px 12px 20px' }}>
-          <div style={{ height: 1, background: '#1e1e2a', marginBottom: 10 }} />
-          <button
-            onClick={handleLogout}
-            disabled={loggingOut}
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-              padding: '7px 10px', borderRadius: 5,
-              border: '1px solid #1e1e2a',
-              background: 'transparent',
-              color: '#404050', fontSize: 11,
-              cursor: loggingOut ? 'not-allowed' : 'pointer',
-              transition: 'all 0.1s',
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
-            </svg>
-            Cerrar sesión
-          </button>
         </div>
+
+        <div style={{ position: 'relative', border: '1px solid var(--line)', background: 'var(--ink-2)', padding: 14, marginBottom: 26 }}>
+          <div style={{ position: 'absolute', top: 10, right: 0 }}><StairsAccent /></div>
+          <div className="scala-alt" style={{ color: 'var(--text-3)', fontSize: 9.5 }}>Tu pipeline · hoy</div>
+          <div className="scala-display" style={{ color: 'var(--text)', fontSize: 30, marginTop: 10 }}>{leads.length}</div>
+          <div className="scala-alt" style={{ color: 'var(--green)', fontSize: 9.5, fontWeight: 800, lineHeight: 1.45 }}>
+            ▲ {counts.needs} nuevos · {counts.hot} calientes
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gap: 22 }}>
+          <section>
+            <Eyebrow>Bandeja</Eyebrow>
+            <nav style={{ display: 'grid', gap: 2, marginTop: 12 }}>
+              <SideItem color="var(--warm)" label="Requieren respuesta" count={counts.needs} active={activeFilter === 'needs'} onClick={() => setActiveFilter('needs')} />
+              <SideItem color="var(--text-4)" label="Bot trabado" count={counts.stuck} active={activeFilter === 'stuck'} onClick={() => setActiveFilter('stuck')} />
+              <SideItem color="var(--green)" label="Listos para presupuesto" count={counts.byStage.calificado ?? 0} active={activeFilter === 'hot'} onClick={() => setActiveFilter('hot')} />
+            </nav>
+          </section>
+          <section>
+            <Eyebrow>Etapas</Eyebrow>
+            <nav style={{ display: 'grid', gap: 2, marginTop: 12 }}>
+              {STAGES.map((stage) => (
+                <SideItem key={stage.key} color="var(--blue)" label={stage.label} count={counts.byStage[stage.key] ?? 0} active={activeStage === stage.key} onClick={() => { setActiveStage(stage.key); setActiveFilter('all'); }} />
+              ))}
+            </nav>
+          </section>
+        </div>
+
+        <button onClick={handleLogout} disabled={loggingOut} className="scala-button" style={{ width: '100%', marginTop: 26 }}>Cerrar sesión</button>
       </aside>
 
-      {/* ══ PANEL 2: Lista de chats (300px) ══ */}
-      <div style={{
-        width: 300, flexShrink: 0,
-        borderRight: '1px solid #1e1e2a',
-        display: 'flex', flexDirection: 'column',
-        background: '#050508',
-      }}>
-        {/* Search */}
-        <div style={{ padding: '14px 12px 10px', borderBottom: '1px solid #1e1e2a', flexShrink: 0 }}>
-          <div style={{ position: 'relative' }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#404050" strokeWidth={2}
-              style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-              <circle cx="11" cy="11" r="8" /><path strokeLinecap="round" d="m21 21-4.35-4.35" />
-            </svg>
-            <input
-              value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar lead..."
-              style={{
-                width: '100%', boxSizing: 'border-box',
-                paddingLeft: 30, paddingRight: 10, paddingTop: 7, paddingBottom: 7,
-                borderRadius: 4, border: '1px solid #1e1e2a',
-                background: '#12121a',
-                color: '#e4e4e8', fontSize: 12, outline: 'none',
-                fontFamily: 'inherit',
-              }}
-            />
+      <section style={{ background: 'var(--ink-1)', borderRight: '1px solid var(--line)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '16px 14px 10px', borderBottom: '1px solid var(--line)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+            <h1 className="scala-display" style={{ margin: 0, fontSize: 22, color: 'var(--text)' }}>Leads</h1>
+            <span className="scala-alt" style={{ color: 'var(--blue-200)', fontSize: 9 }}>{filtered.length} / {leads.length}</span>
           </div>
-          <p style={{ fontSize: 10, color: '#404050', margin: '7px 0 0', fontFamily: MONO, letterSpacing: '0.04em' }}>
-            {filtered.length} {filtered.length === 1 ? 'lead' : 'leads'}
-          </p>
-        </div>
-
-        {/* Lista */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {filtered.length === 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '40%' }}>
-              <p style={{ fontSize: 12, color: '#404050' }}>Sin resultados</p>
-            </div>
-          ) : filtered.map((lead) => {
-            const isSelected = selectedLead?.RecordID === lead.RecordID;
-            const isNew = newLeadIds.has(lead.RecordID) && !isSelected;
-            const badge = STAGE_BADGE[lead.current_stage] ?? STAGE_BADGE['nuevo'];
-            const initial = (lead.whatsapp_display_name || lead.name || lead.phone).charAt(0).toUpperCase();
-            const lastMsg = msgPreviews[lead.RecordID];
-            const seenTimestamp = seenAt[lead.RecordID];
-            const leadWrote = lastMsg?.role === 'user' &&
-              (!seenTimestamp || lastMsg.created_at > seenTimestamp);
-
-            let msgPrefix = '';
-            if (lastMsg?.role === 'human_agent') msgPrefix = 'Vos: ';
-            else if (lastMsg?.role === 'assistant') msgPrefix = 'Sentinel: ';
-
-            const msgPreview = isNew
-              ? 'Lead nuevo ingresado'
-              : lastMsg ? `${msgPrefix}${lastMsg.content}` : 'Sin mensajes aún';
-
-            let rowBg = 'transparent';
-            let leftBorder = 'transparent';
-            if (isSelected)   { rowBg = 'rgba(24,93,232,0.1)';   leftBorder = '#185de8'; }
-            else if (isNew)   { rowBg = 'rgba(107,221,161,0.06)'; leftBorder = '#6bdda1'; }
-            else if (leadWrote) { rowBg = 'rgba(245,158,11,0.04)'; leftBorder = '#f59e0b'; }
-
-            return (
-              <button
-                key={lead.RecordID}
-                onClick={() => {
-                  setSelectedLead(lead);
-                  if (lastMsg) {
-                    const updated = { ...seenAt, [lead.RecordID]: lastMsg.created_at };
-                    setSeenAt(updated);
-                    localStorage.setItem('scala_seen_leads', JSON.stringify(updated));
-                  }
-                }}
-                style={{
-                  width: '100%', display: 'flex', gap: 11, padding: '12px 12px',
-                  background: rowBg,
-                  borderLeft: `2px solid ${leftBorder}`,
-                  border: 'none', cursor: 'pointer', textAlign: 'left',
-                  borderBottom: '1px solid #1e1e2a',
-                  transition: 'background 0.1s',
-                }}
-              >
-                {/* Avatar */}
-                <div style={{ position: 'relative', flexShrink: 0 }}>
-                  <div style={{
-                    width: 36, height: 36, borderRadius: '50%',
-                    background: isNew ? 'rgba(107,221,161,0.15)' : '#12121a',
-                    border: `1px solid ${isNew ? 'rgba(107,221,161,0.4)' : '#2a2a38'}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 13, fontWeight: 700, fontFamily: MONO,
-                    color: isNew ? '#6bdda1' : '#848484',
-                  }}>
-                    {initial}
-                  </div>
-                  {leadWrote && !isNew && (
-                    <span style={{
-                      position: 'absolute', bottom: 0, right: 0,
-                      width: 9, height: 9, borderRadius: '50%',
-                      background: '#f59e0b', border: '2px solid #050508',
-                      animation: 'leadAlert 1.8s ease-in-out infinite',
-                    }} />
-                  )}
-                </div>
-
-                {/* Info */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                    <span style={{
-                      fontSize: 14, fontWeight: 600,
-                      color: isNew ? '#6bdda1' : '#e4e4e8',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140,
-                    }}>
-                      {lead.whatsapp_display_name || lead.name || lead.phone}
-                    </span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                      {isNew && (
-                        <span style={{
-                          fontSize: 8, fontWeight: 800, color: '#000',
-                          background: '#6bdda1', borderRadius: 3, padding: '1px 5px',
-                          letterSpacing: '0.06em', textTransform: 'uppercase', fontFamily: MONO,
-                          animation: 'newBadge 1.5s ease-in-out infinite',
-                        }}>NEW</span>
-                      )}
-                      {!isNew && leadWrote && (
-                        <span style={{ fontSize: 8, fontWeight: 700, color: '#f59e0b', letterSpacing: '0.06em', textTransform: 'uppercase', fontFamily: MONO }}>
-                          nuevo
-                        </span>
-                      )}
-                      <span style={{ fontSize: 10, color: '#404050', fontFamily: MONO }}>
-                        {formatTime(lead.last_message_at)}
-                      </span>
-                    </div>
-                  </div>
-                  <p style={{
-                    fontSize: 12, margin: '0 0 5px',
-                    color: isNew ? 'rgba(107,221,161,0.6)' : leadWrote ? '#e4e4e8' : '#848484',
-                    fontWeight: leadWrote || isNew ? 500 : 400,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {msgPreview}
-                  </p>
-                  <span style={{
-                    display: 'inline-block',
-                    fontSize: 9, fontWeight: 600, fontFamily: MONO,
-                    padding: '2px 6px', borderRadius: 3,
-                    background: badge.bg, color: badge.color,
-                    textTransform: 'uppercase', letterSpacing: '0.06em',
-                  }}>
-                    {lead.current_stage === 'en_calificacion' ? 'calificando' : lead.current_stage.replace('_', ' ')}
-                  </span>
-                  {lead.score && (
-                    <span style={{ fontSize: 9, color: '#404050', fontFamily: MONO, marginLeft: 5 }}>
-                      {lead.score}pts
-                    </span>
-                  )}
-                </div>
+          <input data-scala-search value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nombre, teléfono, ambiente..." style={{ width: '100%', background: 'var(--ink-2)', border: '1px solid var(--line)', color: 'var(--text)', padding: '8px 10px', outline: 'none' }} />
+          <div style={{ display: 'flex', gap: 5, overflowX: 'auto', marginTop: 12, paddingBottom: 4 }}>
+            {FILTERS.map((filter) => (
+              <button key={filter.key} onClick={() => setActiveFilter(filter.key)} className="scala-button" style={{ flexShrink: 0, background: activeFilter === filter.key ? 'var(--blue)' : 'var(--ink-2)', borderColor: activeFilter === filter.key ? 'var(--blue)' : 'var(--line)', color: activeFilter === filter.key ? 'white' : 'var(--text-2)' }}>
+                {filter.label} {filter.key === 'all' ? leads.length : ''}
               </button>
-            );
-          })}
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* ══ PANEL 3: Chat abierto ══ */}
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: '#000' }}>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--ink-1)', padding: '8px 14px', borderBottom: '1px solid var(--line)' }}>
+            <span className="scala-alt" style={{ color: 'var(--text-3)', fontSize: 10 }}>— Ahora</span>
+          </div>
+          {filtered.length ? filtered.map((lead) => (
+            <LeadCard
+              key={lead.RecordID}
+              lead={lead}
+              selected={selectedLead?.RecordID === lead.RecordID}
+              lastMessage={msgPreviews[lead.RecordID]}
+              onClick={() => setSelectedLead(lead)}
+            />
+          )) : (
+            <div style={{ padding: 28, color: 'var(--text-4)', textAlign: 'center' }}>
+              <StairsAccent align="left" color="var(--text-4)" />
+              <p className="scala-alt" style={{ fontSize: 10 }}>Sin resultados</p>
+              <button className="scala-button" onClick={() => { setSearch(''); setActiveFilter('all'); }}>Limpiar filtros</button>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <main style={{ minWidth: 0 }}>
         {selectedLead ? (
           <ChatContainer
             key={selectedLead.RecordID}
@@ -496,99 +240,59 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
             leadInfo={buildLeadInfoFromAirtable(selectedLead)}
           />
         ) : (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1e1e2a" strokeWidth={1.5}>
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-            <p style={{ fontSize: 12, color: '#404050', letterSpacing: '0.04em', fontFamily: MONO }}>
-              Seleccioná un lead
-            </p>
+          <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: 'var(--text-4)' }}>
+            <div>
+              <StairsAccent align="left" color="var(--green)" />
+              <p className="scala-alt">Seleccioná un lead</p>
+            </div>
           </div>
         )}
-      </div>
-
-      {/* ══ Toasts de mensaje nuevo ══ */}
-      <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none' }}>
-        {toasts.map((toast) => {
-          const initial = (toast.lead.whatsapp_display_name || toast.lead.name || toast.lead.phone).charAt(0).toUpperCase();
-          const name = toast.lead.whatsapp_display_name || toast.lead.name || toast.lead.phone;
-          return (
-            <div
-              key={toast.id}
-              style={{ pointerEvents: 'all', animation: 'toastIn 0.25s ease' }}
-            >
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                background: '#12121a', border: '1px solid #2a2a38',
-                borderLeft: '3px solid #f59e0b',
-                borderRadius: 5, padding: '12px 14px',
-                width: 300, cursor: 'pointer',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-              }}
-                onClick={() => {
-                  setSelectedLead(toast.lead);
-                  setActiveStage('all');
-                  setToasts(prev => prev.filter(t => t.id !== toast.id));
-                  const updated = { ...seenAt, [toast.lead.RecordID]: toast.content };
-                  setSeenAt(updated);
-                  localStorage.setItem('scala_seen_leads', JSON.stringify(updated));
-                }}
-              >
-                {/* Avatar */}
-                <div style={{
-                  width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
-                  background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 13, fontWeight: 700, color: '#f59e0b', fontFamily: MONO,
-                }}>
-                  {initial}
-                </div>
-                {/* Text */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#e4e4e8' }}>{name}</span>
-                    <span style={{ fontSize: 9, color: '#f59e0b', fontFamily: MONO, fontWeight: 700, letterSpacing: '0.06em' }}>NUEVO</span>
-                  </div>
-                  <p style={{ fontSize: 11, color: '#848484', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {toast.content}
-                  </p>
-                </div>
-                {/* Close */}
-                <button
-                  onClick={e => { e.stopPropagation(); setToasts(prev => prev.filter(t => t.id !== toast.id)); }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#404050', padding: 2, flexShrink: 0, lineHeight: 1 }}
-                >
-                  <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <style>{`
-        @keyframes calPulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(107,221,161,0); }
-          50%       { box-shadow: 0 0 0 4px rgba(107,221,161,0.15); }
-        }
-        @keyframes leadAlert {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); }
-          50%       { box-shadow: 0 0 0 3px rgba(245,158,11,0.3); }
-        }
-        @keyframes newBadge {
-          0%, 100% { opacity: 1; }
-          50%       { opacity: 0.6; }
-        }
-        @keyframes toastIn {
-          from { opacity: 0; transform: translateY(12px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        input::placeholder { color: #404050; }
-        input:focus { border-color: #2a2a38 !important; }
-        button:hover:not(:disabled) { opacity: 0.85; }
-      `}</style>
+      </main>
     </div>
+  );
+}
+
+function SideItem({ color, label, count, active, onClick }: { color: string; label: string; count: number; active?: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} style={{ display: 'grid', gridTemplateColumns: '10px 1fr auto', alignItems: 'center', gap: 8, border: 'none', borderLeft: active ? '3px solid var(--blue)' : '3px solid transparent', background: active ? 'var(--vendor-soft)' : 'transparent', color: active ? 'var(--text)' : 'var(--text-2)', minHeight: 28, padding: '0 8px', cursor: 'pointer', textAlign: 'left' }}>
+      <span style={{ width: 6, height: 6, background: color }} />
+      <span style={{ fontSize: 12 }}>{label}</span>
+      <span style={{ minWidth: 18, textAlign: 'center', background: active ? 'var(--blue)' : 'var(--ink-3)', color: active ? 'white' : color, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700 }}>{count}</span>
+    </button>
+  );
+}
+
+function LeadCard({ lead, selected, lastMessage, onClick }: { lead: AirtableLead; selected: boolean; lastMessage?: LastMessage; onClick: () => void }) {
+  const state = deriveSentinelState(lead);
+  const action = getCurrentAction(lead);
+  const name = lead.whatsapp_display_name || lead.name || lead.phone;
+  const initial = name.charAt(0).toUpperCase();
+  const pip = state.priority === 'stuck' ? 'var(--warm)' : state.priority === 'hot' ? 'var(--hot)' : 'var(--green)';
+  const preview = lastMessage?.content || lead.last_message_summary || 'Sin mensajes aún';
+
+  return (
+    <button onClick={onClick} style={{ width: '100%', display: 'grid', gridTemplateColumns: '38px 1fr auto', gap: 10, border: 'none', borderBottom: '1px solid var(--line)', borderLeft: selected ? '3px solid var(--blue)' : '3px solid transparent', background: selected ? 'rgba(24,93,232,0.16)' : 'transparent', padding: '12px 10px', cursor: 'pointer', textAlign: 'left' }}>
+      <div style={{ position: 'relative', width: 38, height: 38, background: 'var(--ink-5)', display: 'grid', placeItems: 'center', color: 'var(--text)', fontFamily: 'var(--display)' }}>
+        {initial}
+        <span style={{ position: 'absolute', right: -3, bottom: -3, width: 12, height: 12, borderRadius: '50%', background: pip, border: '2px solid var(--ink-1)' }} />
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <strong style={{ color: 'var(--text)', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</strong>
+          {lastMessage?.role === 'user' && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--blue)' }} />}
+        </div>
+        <div className="scala-alt" style={{ color: action.color, fontSize: 10, fontWeight: 800, marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {action.prefix} · {action.label}
+        </div>
+        <p style={{ color: 'var(--text-3)', fontSize: 11, margin: '4px 0 7px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{preview}</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <StageTag stage={lead.current_stage} />
+          <IntentBar state={state} />
+        </div>
+      </div>
+      <span style={{ color: lastMessage?.role === 'user' ? 'var(--blue-200)' : 'var(--text-3)', fontFamily: 'var(--mono)', fontSize: 10, fontWeight: lastMessage?.role === 'user' ? 800 : 400 }}>
+        {formatTime(lastMessage?.created_at ?? lead.last_message_at)}
+      </span>
+    </button>
   );
 }

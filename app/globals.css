@@ -1,6 +1,11 @@
 @import "tailwindcss";
 
-/* ── Venn typeface ─────────────────────────────── */
+@font-face {
+  font-family: 'VennDisplay';
+  src: url('/fonts/Venn-XBold.otf') format('opentype');
+  font-weight: 800;
+  font-display: swap;
+}
 @font-face {
   font-family: 'Venn';
   src: url('/fonts/Venn-Light.otf') format('opentype');
@@ -32,88 +37,139 @@
   font-display: swap;
 }
 
-/* ── Design tokens ─────────────────────────────── */
 :root {
-  /* Backgrounds */
-  --bg:           #000000;
-  --surface-0:    #050508;
-  --surface-1:    #0a0a0f;
-  --surface-2:    #12121a;
-  --surface-3:    #1a1a25;
-
-  /* Borders */
-  --border-1:     #1e1e2a;
-  --border-2:     #2a2a38;
-
-  /* Brand */
-  --blue:         #185de8;
-  --blue-dim:     rgba(24,93,232,0.15);
-  --blue-glow:    rgba(24,93,232,0.3);
-  --green:        #6bdda1;
-  --green-dim:    rgba(107,221,161,0.12);
-  --green-glow:   rgba(107,221,161,0.25);
-  --warning:      #f59e0b;
-  --warning-dim:  rgba(245,158,11,0.12);
-  --danger:       #e53e3e;
-  --danger-dim:   rgba(229,62,62,0.12);
-
-  /* Text */
-  --text-primary: #e4e4e8;
-  --text-dimmed:  #848484;
-  --text-subtle:  #404050;
-
-  /* Typography */
-  --font-title: 'Venn', 'Arial Black', sans-serif;
-  --font-body:  'Venn', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  --font-mono:  'SF Mono', 'Consolas', 'Liberation Mono', monospace;
+  --blue: #185de8;
+  --blue-700: #0b3c89;
+  --blue-300: #548ee2;
+  --blue-200: #88adea;
+  --green: #6bdda1;
+  --green-700: #3b7a58;
+  --green-300: #83cca1;
+  --ink-0: #000000;
+  --ink-1: #0a0a0c;
+  --ink-2: #111114;
+  --ink-3: #17171c;
+  --ink-4: #1d1d24;
+  --ink-5: #25252e;
+  --line: #232329;
+  --line-2: #2d2d36;
+  --text: #f2f2f4;
+  --text-2: #a8a8b3;
+  --text-3: #71717f;
+  --text-4: #4a4a55;
+  --warm: #ffae5c;
+  --hot: #ff6b6b;
+  --vendor-soft: rgba(24, 93, 232, 0.12);
+  --sentinel-soft: rgba(107, 221, 161, 0.08);
+  --warm-soft: rgba(255, 174, 92, 0.1);
+  --hot-soft: rgba(255, 107, 107, 0.1);
+  --display: 'VennDisplay', 'Venn', 'Helvetica Neue', Arial, sans-serif;
+  --alt: 'Venn', 'Helvetica Neue', Arial, sans-serif;
+  --sans: 'Helvetica Neue', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-/* ── Reset ─────────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; }
 
 html, body {
   height: 100%;
+  margin: 0;
   overflow: hidden;
-  background: var(--bg);
-  color: var(--text-primary);
-  font-family: var(--font-body);
-  font-weight: 400;
+  background: var(--ink-0);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── Background glow ───────────────────────────── */
+button, input, textarea, select {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 1px solid var(--blue-300);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(24, 93, 232, 0.45);
+  color: white;
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-4); }
+
+.scala-display {
+  font-family: var(--display);
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  line-height: 0.98;
+}
+
+.scala-alt {
+  font-family: var(--alt);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.scala-panel {
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+}
+
+.scala-button {
+  border: 1px solid var(--line-2);
+  background: var(--ink-2);
+  color: var(--text);
+  border-radius: 0;
+  min-height: 32px;
+  padding: 0 12px;
+  font-family: var(--alt);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.scala-button-primary {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: white;
+}
+
+.scala-button-warm {
+  border-color: var(--warm);
+  background: var(--warm);
+  color: var(--ink-0);
+}
+
+.scala-button:hover:not(:disabled) {
+  border-color: var(--blue-300);
+}
+
+.scala-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .scala-bg {
-  background: var(--bg);
-  position: relative;
-  overflow: hidden;
+  background: var(--ink-0);
 }
-.scala-bg::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse 55% 40% at 100% 100%, var(--blue-glow) 0%, transparent 70%),
-    radial-gradient(ellipse 35% 25% at 0% 100%,   var(--green-glow) 0%, transparent 70%);
-  z-index: 0;
-}
-.scala-bg > * { position: relative; z-index: 1; }
 
-/* ── Scrollbar ─────────────────────────────────── */
-::-webkit-scrollbar         { width: 3px; }
-::-webkit-scrollbar-track   { background: transparent; }
-::-webkit-scrollbar-thumb   { background: var(--border-1); border-radius: 1px; }
-::-webkit-scrollbar-thumb:hover { background: var(--border-2); }
-
-/* ── Grain overlay ─────────────────────────────── */
-.grain::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.02;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-  background-size: 200px 200px;
-  z-index: 0;
+@media (max-width: 959px) {
+  html, body {
+    overflow: auto;
+  }
 }
