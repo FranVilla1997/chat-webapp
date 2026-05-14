@@ -28,6 +28,16 @@ const supabaseBrowser = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+function friendlySendError(error: string) {
+  const lower = error.toLowerCase();
+  if (lower.includes('evolution') || lower.includes('unauthorized') || lower.includes('401') || lower.includes('whatsapp')) {
+    return 'No se pudo enviar el mensaje por un error de conexión con WhatsApp. Revisá que la instancia del lead tenga su API key correcta.';
+  }
+  if (lower.includes('audio')) return 'No se pudo enviar el audio. Revisá la conexión e intentá nuevamente.';
+  if (lower.includes('archivo') || lower.includes('media')) return 'No se pudo enviar el archivo. Revisá la conexión e intentá nuevamente.';
+  return error;
+}
+
 type QuoteUrlItem = {
   familia: string;
   producto?: string;
@@ -554,7 +564,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
 
           {(sendError || audioError || fileError || stageError) && (
             <div style={{ padding: '8px 24px', background: 'rgba(229,62,62,0.06)', borderTop: '1px solid rgba(229,62,62,0.15)' }}>
-              <p style={{ fontSize: 11, color: '#e53e3e' }}>{sendError || audioError || fileError || stageError}</p>
+              <p style={{ fontSize: 11, color: '#e53e3e' }}>{friendlySendError(sendError || audioError || fileError || stageError || '')}</p>
             </div>
           )}
 

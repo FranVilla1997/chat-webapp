@@ -28,6 +28,14 @@ function normalizePhone(value: string): string {
   return value.replace(/\D/g, '');
 }
 
+function normalizeInstanceKey(value?: string | null): string {
+  return (value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
 function envConfig(instance: string): EvolutionConfig | null {
   const baseUrl = process.env.EVOLUTION_API_URL;
   const apiKey = process.env.EVOLUTION_API_KEY;
@@ -43,10 +51,10 @@ function supabaseAdmin() {
 }
 
 function pickInstance(rows: EvolutionInstanceRow[], requested: string, clientId?: string): EvolutionInstanceRow | null {
-  const normalized = requested.trim().toLowerCase();
+  const normalized = normalizeInstanceKey(requested);
   const sameName = rows.filter((row) =>
-    row.instance_name.trim().toLowerCase() === normalized ||
-    row.display_name?.trim().toLowerCase() === normalized
+    normalizeInstanceKey(row.instance_name) === normalized ||
+    normalizeInstanceKey(row.display_name) === normalized
   );
   if (!sameName.length) return null;
   return (
