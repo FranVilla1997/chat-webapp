@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendWhatsAppMessage } from '@/lib/evolution';
+import { whatsappMessageFields } from '@/lib/whatsapp-message-key';
+import { insertMessageWithOptionalWhatsappKey } from '@/lib/insert-message';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,20 +18,20 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Send via Evolution API
-    await sendWhatsAppMessage(instance, leadPhone, text.trim(), clientId);
+    const evolutionResponse = await sendWhatsAppMessage(instance, leadPhone, text.trim(), clientId);
 
     // 2. Insert into messages table (lead_id = Airtable record ID)
-    const { data: message, error: msgError } = await supabaseAdmin
-      .from('messages')
-      .insert({
+    const { data: message, error: msgError } = await insertMessageWithOptionalWhatsappKey(
+      supabaseAdmin,
+      {
         lead_id: leadId,
         client_id: clientId,
         role: 'human_agent',
         content: text.trim(),
         was_audio: false,
-      })
-      .select()
-      .single();
+        ...whatsappMessageFields(evolutionResponse),
+      }
+    );
 
     if (msgError) throw new Error(msgError.message);
 

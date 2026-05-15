@@ -5,6 +5,18 @@ interface SendTextPayload {
   text: string;
 }
 
+export interface EvolutionMessageKey {
+  remoteJid: string;
+  fromMe: boolean;
+  id: string;
+  participant?: string;
+}
+
+export interface EvolutionMessageResponse {
+  key?: EvolutionMessageKey;
+  [key: string]: unknown;
+}
+
 interface EvolutionInstanceRow {
   client_id: string | null;
   instance_name: string;
@@ -103,12 +115,22 @@ async function parseEvolutionError(response: Response): Promise<string> {
   return body || response.statusText;
 }
 
+async function parseEvolutionResponse(response: Response): Promise<EvolutionMessageResponse> {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text) as EvolutionMessageResponse;
+  } catch {
+    return {};
+  }
+}
+
 export async function sendWhatsAppMessage(
   instance: string,
   number: string,
   text: string,
   clientId?: string
-): Promise<void> {
+): Promise<EvolutionMessageResponse> {
   const config = await resolveEvolutionConfig(instance, clientId);
   const payload: SendTextPayload = { number: normalizePhone(number), text };
 
@@ -124,6 +146,8 @@ export async function sendWhatsAppMessage(
   if (!response.ok) {
     throw new Error(`Evolution API error ${response.status}: ${await parseEvolutionError(response)}`);
   }
+
+  return parseEvolutionResponse(response);
 }
 
 export async function sendWhatsAppAudio(
@@ -131,7 +155,7 @@ export async function sendWhatsAppAudio(
   number: string,
   audioBase64: string,
   clientId?: string
-): Promise<void> {
+): Promise<EvolutionMessageResponse> {
   const config = await resolveEvolutionConfig(instance, clientId);
 
   const response = await fetch(`${config.baseUrl}/message/sendWhatsAppAudio/${encodeURIComponent(config.instanceName)}`, {
@@ -143,6 +167,8 @@ export async function sendWhatsAppAudio(
   if (!response.ok) {
     throw new Error(`Evolution API audio error ${response.status}: ${await parseEvolutionError(response)}`);
   }
+
+  return parseEvolutionResponse(response);
 }
 
 export type WhatsAppMediaType = 'image' | 'video' | 'document';
@@ -158,7 +184,7 @@ export async function sendWhatsAppMedia(
     caption?: string;
   },
   clientId?: string
-): Promise<void> {
+): Promise<EvolutionMessageResponse> {
   const config = await resolveEvolutionConfig(instance, clientId);
 
   const response = await fetch(`${config.baseUrl}/message/sendMedia/${encodeURIComponent(config.instanceName)}`, {
@@ -176,5 +202,59 @@ export async function sendWhatsAppMedia(
 
   if (!response.ok) {
     throw new Error(`Evolution API media error ${response.status}: ${await parseEvolutionError(response)}`);
+  }
+
+  return parseEvolutionResponse(response);
+}
+
+export async function updateWhatsAppMessage(
+  instance: string,
+  number: string,
+  key: EvolutionMessageKey,
+  text: string,
+  clientId?: string
+): Promise<void> {
+  const config = await resolveEvolutionConfig(instance, clientId);
+
+  const response = await fetch(`${config.baseUrl}/chat/updateMessage/${encodeURIComponent(config.instanceName)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: config.apiKey },
+    body: JSON.stringify({
+      number: Number(normalizePhone(number)),
+      text,
+      key: {
+        remoteJid: key.remoteJid,
+        fromMe: key.fromMe,
+        id: key.id,
+        ...(key.participant ? { participant: key.participant } : {}),
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Evolution API update error ${response.status}: ${await parseEvolutionError(response)}`);
+  }
+}
+
+export async function deleteWhatsAppMessageForEveryone(
+  instance: string,
+  key: EvolutionMessageKey,
+  clientId?: string
+): Promise<void> {
+  const config = await resolveEvolutionConfig(instance, clientId);
+
+  const response = await fetch(`${config.baseUrl}/chat/deleteMessageForEveryone/${encodeURIComponent(config.instanceName)}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', apikey: config.apiKey },
+    body: JSON.stringify({
+      id: key.id,
+      remoteJid: key.remoteJid,
+      fromMe: key.fromMe,
+      ...(key.participant ? { participant: key.participant } : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Evolution API delete error ${response.status}: ${await parseEvolutionError(response)}`);
   }
 }

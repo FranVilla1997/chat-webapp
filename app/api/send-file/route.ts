@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendWhatsAppMedia, type WhatsAppMediaType } from '@/lib/evolution';
+import { whatsappMessageFields } from '@/lib/whatsapp-message-key';
+import { insertMessageWithOptionalWhatsappKey } from '@/lib/insert-message';
 
 const ATTACHMENTS_BUCKET = 'chat-attachments';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
@@ -47,7 +49,7 @@ export async function POST(req: NextRequest) {
     if (signedError || !signed?.signedUrl) throw new Error(signedError?.message ?? 'No se pudo generar URL del archivo.');
 
     const mediaType = mediaTypeFromMime(mimeType);
-    await sendWhatsAppMedia(instance, leadPhone, {
+    const evolutionResponse = await sendWhatsAppMedia(instance, leadPhone, {
       mediaUrl: signed.signedUrl,
       mediaType,
       mimeType,
@@ -58,17 +60,17 @@ export async function POST(req: NextRequest) {
     const label = mediaType === 'image' ? 'Foto' : mediaType === 'video' ? 'Video' : 'Archivo';
     const content = caption?.trim() ? `${label}: ${caption.trim()}` : `${label} enviado: ${fileName}`;
 
-    const { data: message, error: msgError } = await supabase
-      .from('messages')
-      .insert({
+    const { data: message, error: msgError } = await insertMessageWithOptionalWhatsappKey(
+      supabase,
+      {
         lead_id: leadId,
         client_id: clientId,
         role: 'human_agent',
         content,
         was_audio: false,
-      })
-      .select()
-      .single();
+        ...whatsappMessageFields(evolutionResponse),
+      }
+    );
 
     if (msgError) throw new Error(msgError.message);
 

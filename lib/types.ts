@@ -6,6 +6,15 @@ export interface Message {
   content: string;
   was_audio: boolean;
   created_at: string;
+  whatsapp_message_id?: string | null;
+  whatsapp_remote_jid?: string | null;
+  whatsapp_from_me?: boolean | null;
+  whatsapp_message_key?: {
+    remoteJid: string;
+    fromMe: boolean;
+    id: string;
+    participant?: string;
+  } | null;
   attachments?: MessageAttachment[];
 }
 

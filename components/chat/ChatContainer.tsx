@@ -435,7 +435,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
     const response = await fetch(`/api/messages/${messageId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, leadPhone, instance }),
     });
     const result = await response.json() as { error?: string; message?: { content?: string } };
     if (!response.ok) throw new Error(result.error ?? 'No se pudo editar el mensaje');
@@ -445,6 +445,8 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
   async function handleDeleteMessage(messageId: string | number) {
     const response = await fetch(`/api/messages/${messageId}`, {
       method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instance }),
     });
     const result = await response.json().catch(() => ({})) as { error?: string };
     if (!response.ok) throw new Error(result.error ?? 'No se pudo eliminar el mensaje');

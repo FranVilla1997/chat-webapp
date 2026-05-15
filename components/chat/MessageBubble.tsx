@@ -150,7 +150,7 @@ function MessageActions({
     if (!editing) setDraft(message.content);
   }, [message.content, editing]);
 
-  if (disabled || (!onEdit && !onDelete) || message.role === 'system') return null;
+  if (disabled || (!onEdit && !onDelete) || message.role !== 'human_agent') return null;
 
   async function saveEdit() {
     const content = draft.trim();
@@ -173,7 +173,7 @@ function MessageActions({
   }
 
   async function deleteMessage() {
-    if (!confirm('¿Eliminar este mensaje de la conversación?')) return;
+    if (!confirm('¿Eliminar este mensaje de WhatsApp para todos?')) return;
 
     setBusy(true);
     setError(null);
@@ -286,7 +286,8 @@ function MessageActions({
 
 export function MessageBubble({ message, isOptimistic, onEdit, onDelete }: MessageBubbleProps) {
   const { role, content, created_at, was_audio } = message;
-  const canManage = !isOptimistic && !String(message.id).startsWith('temp-');
+  const hasWhatsAppKey = Boolean(message.whatsapp_message_key?.id || message.whatsapp_message_id);
+  const canManage = message.role === 'human_agent' && hasWhatsAppKey && !isOptimistic && !String(message.id).startsWith('temp-');
 
   /* ── System — centered pill ─────────────────── */
   if (role === 'system') {
