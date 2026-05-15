@@ -215,12 +215,13 @@ export async function updateWhatsAppMessage(
   clientId?: string
 ): Promise<void> {
   const config = await resolveEvolutionConfig(instance, clientId);
+  const keyNumber = key.remoteJid.split('@')[0] || number;
 
   const response = await fetch(`${config.baseUrl}/chat/updateMessage/${encodeURIComponent(config.instanceName)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: config.apiKey },
     body: JSON.stringify({
-      number: normalizePhone(number),
+      number: normalizePhone(keyNumber),
       text,
       key: {
         remoteJid: key.remoteJid,
