@@ -150,7 +150,7 @@ function MessageActions({
     if (!editing) setDraft(message.content);
   }, [message.content, editing]);
 
-  if (disabled || (!onEdit && !onDelete) || message.role !== 'human_agent') return null;
+  if (disabled || !onEdit || !['human_agent', 'assistant'].includes(message.role)) return null;
 
   async function saveEdit() {
     const content = draft.trim();
@@ -247,22 +247,20 @@ function MessageActions({
 
   return (
     <div style={{ display: 'inline-flex', gap: 8, marginTop: 4 }}>
-      {onEdit && (
-        <button
-          onClick={() => setEditing(true)}
-          disabled={busy}
-          style={{
-            border: 'none',
-            background: 'transparent',
-            color: 'rgba(255,255,255,0.35)',
-            padding: 0,
-            fontSize: 10,
-            cursor: busy ? 'not-allowed' : 'pointer',
-          }}
-        >
-          Editar
-        </button>
-      )}
+      <button
+        onClick={() => setEditing(true)}
+        disabled={busy}
+        style={{
+          border: 'none',
+          background: 'transparent',
+          color: 'rgba(255,255,255,0.35)',
+          padding: 0,
+          fontSize: 10,
+          cursor: busy ? 'not-allowed' : 'pointer',
+        }}
+      >
+        Editar
+      </button>
       {onDelete && (
         <button
           onClick={deleteMessage}
@@ -287,7 +285,11 @@ function MessageActions({
 export function MessageBubble({ message, isOptimistic, onEdit, onDelete }: MessageBubbleProps) {
   const { role, content, created_at, was_audio } = message;
   const hasWhatsAppKey = Boolean(message.whatsapp_message_key?.id || message.whatsapp_message_id);
-  const canManage = message.role === 'human_agent' && hasWhatsAppKey && !isOptimistic && !String(message.id).startsWith('temp-');
+  const canManage =
+    !isOptimistic &&
+    !String(message.id).startsWith('temp-') &&
+    (message.role === 'assistant' || (message.role === 'human_agent' && hasWhatsAppKey));
+  const canDelete = message.role === 'human_agent' && hasWhatsAppKey;
 
   /* ── System — centered pill ─────────────────── */
   if (role === 'system') {
@@ -321,7 +323,7 @@ export function MessageBubble({ message, isOptimistic, onEdit, onDelete }: Messa
             {was_audio && <AudioBadge />}
             <p style={{ ...msgText, color: '#e4e4e8' }}>{content}</p>
             <Attachments attachments={message.attachments} />
-            <MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={onDelete} />
+            <MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={canDelete ? onDelete : undefined} />
           </div>
           <span style={{ fontSize: 10, color: '#404050', paddingLeft: 2, fontFamily: MONO }}>
             {formatTime(created_at)}
@@ -345,7 +347,7 @@ export function MessageBubble({ message, isOptimistic, onEdit, onDelete }: Messa
             {was_audio && <AudioBadge />}
             <p style={{ ...msgText, color: '#fff' }}>{content}</p>
             <Attachments attachments={message.attachments} />
-            <MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={onDelete} />
+            <MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={canDelete ? onDelete : undefined} />
           </div>
           <span style={{ fontSize: 10, color: '#404050', paddingRight: 2, fontFamily: MONO }}>
             {formatTime(created_at)}
@@ -369,7 +371,7 @@ export function MessageBubble({ message, isOptimistic, onEdit, onDelete }: Messa
           {was_audio && <AudioBadge />}
           <p style={{ ...msgText, color: '#e4e4e8' }}>{content}</p>
           <Attachments attachments={message.attachments} />
-          <MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={onDelete} />
+          <MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={canDelete ? onDelete : undefined} />
         </div>
         <span style={{ fontSize: 10, color: '#404050', paddingRight: 2, fontFamily: MONO }}>
           {formatTime(created_at)}

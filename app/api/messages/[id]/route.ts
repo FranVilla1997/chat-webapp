@@ -86,18 +86,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ error: findError?.message ?? 'Mensaje no encontrado' }, { status: findError ? 500 : 404 });
     }
 
-    if (message.role !== 'human_agent') {
-      return NextResponse.json({ error: 'Solo se pueden editar en WhatsApp los mensajes enviados por el vendedor.' }, { status: 409 });
-    }
+    if (message.role === 'human_agent') {
+      const key = whatsappKeyFromMessage(message as StoredMessage);
+      if (!key || !leadPhone || !instance) {
+        return NextResponse.json({
+          error: 'Este mensaje no tiene ID de WhatsApp guardado. Solo los mensajes nuevos enviados desde SCALA se pueden editar en WhatsApp.',
+        }, { status: 409 });
+      }
 
-    const key = whatsappKeyFromMessage(message as StoredMessage);
-    if (!key || !leadPhone || !instance) {
-      return NextResponse.json({
-        error: 'Este mensaje no tiene ID de WhatsApp guardado. Solo los mensajes nuevos enviados desde SCALA se pueden editar en WhatsApp.',
-      }, { status: 409 });
+      await updateWhatsAppMessage(instance, leadPhone, key, content, profile.clientId);
+    } else if (message.role !== 'assistant') {
+      return NextResponse.json({ error: 'Solo se pueden editar mensajes del vendedor o del Sentinel.' }, { status: 409 });
     }
-
-    await updateWhatsAppMessage(instance, leadPhone, key, content, profile.clientId);
 
     const { data, error } = await service
       .from('messages')
