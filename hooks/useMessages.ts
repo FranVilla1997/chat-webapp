@@ -32,7 +32,19 @@ async function loadAttachments(messages: Message[]): Promise<Message[]> {
 }
 
 function byCreatedAt(a: Message, b: Message) {
-  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  const timeDiff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  if (timeDiff !== 0) return timeDiff;
+
+  const leftId = messageId(a);
+  const rightId = messageId(b);
+  const leftNumber = Number(leftId);
+  const rightNumber = Number(rightId);
+
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) {
+    return leftNumber - rightNumber;
+  }
+
+  return leftId.localeCompare(rightId);
 }
 
 function fingerprint(messages: Message[]) {
@@ -65,6 +77,10 @@ function mergeMessages(current: Message[], fresh: Message[]) {
   return Array.from(nextById.values()).sort(byCreatedAt);
 }
 
+function sortMessages(messages: Message[]) {
+  return [...messages].sort(byCreatedAt);
+}
+
 export function useMessages(leadId: string, clientId: string) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,7 +104,8 @@ export function useMessages(leadId: string, clientId: string) {
         .select('*')
         .eq('lead_id', leadId)
         .eq('client_id', clientId)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true });
 
       if (fetchError) {
         if (options.initial) setError(fetchError.message);
@@ -127,9 +144,9 @@ export function useMessages(leadId: string, clientId: string) {
             setMessages((prev) => {
               const exists = prev.some((m) => String(m.id) === String(newMsg.id));
               if (exists) return prev;
-              const next = [...prev, newMsg];
+              const next = sortMessages([...prev, newMsg]);
               fingerprintRef.current = fingerprint(next);
-              return next.sort(byCreatedAt);
+              return next;
             });
           }
         }
@@ -164,11 +181,11 @@ export function useMessages(leadId: string, clientId: string) {
   }, [leadId, clientId]);
 
   function addOptimisticMessage(msg: Message) {
-    setMessages((prev) => [...prev, msg]);
+    setMessages((prev) => sortMessages([...prev, msg]));
   }
 
   function replaceOptimisticMessage(tempId: string, real: Message) {
-    setMessages((prev) => prev.map((m) => (String(m.id) === String(tempId) ? real : m)));
+    setMessages((prev) => sortMessages(prev.map((m) => (String(m.id) === String(tempId) ? real : m))));
   }
 
   function updateLocalMessage(messageId: string | number, content: string) {
