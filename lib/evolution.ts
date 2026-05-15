@@ -115,6 +115,10 @@ async function parseEvolutionError(response: Response): Promise<string> {
   return body || response.statusText;
 }
 
+function evolutionErrorMessage(status: number, body: string): string {
+  return `Evolution API update error ${status}: ${body}`;
+}
+
 async function parseEvolutionResponse(response: Response): Promise<EvolutionMessageResponse> {
   const text = await response.text();
   if (!text) return {};
@@ -215,26 +219,39 @@ export async function updateWhatsAppMessage(
   clientId?: string
 ): Promise<void> {
   const config = await resolveEvolutionConfig(instance, clientId);
-  const keyNumber = key.remoteJid.split('@')[0] || number;
+  const keyPhone = key.remoteJid.split('@')[0] || number;
+  const numberCandidates = Array.from(new Set([
+    key.remoteJid,
+    normalizePhone(keyPhone),
+    normalizePhone(number),
+  ].filter(Boolean)));
 
-  const response = await fetch(`${config.baseUrl}/chat/updateMessage/${encodeURIComponent(config.instanceName)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: config.apiKey },
-    body: JSON.stringify({
-      number: normalizePhone(keyNumber),
-      text,
-      key: {
-        remoteJid: key.remoteJid,
-        fromMe: key.fromMe,
-        id: key.id,
-        ...(key.participant ? { participant: key.participant } : {}),
-      },
-    }),
-  });
+  let lastError = '';
+  for (const candidate of numberCandidates) {
+    const response = await fetch(`${config.baseUrl}/chat/updateMessage/${encodeURIComponent(config.instanceName)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: config.apiKey },
+      body: JSON.stringify({
+        number: candidate,
+        text,
+        key: {
+          remoteJid: key.remoteJid,
+          fromMe: key.fromMe,
+          id: key.id,
+          ...(key.participant ? { participant: key.participant } : {}),
+        },
+      }),
+    });
 
-  if (!response.ok) {
-    throw new Error(`Evolution API update error ${response.status}: ${await parseEvolutionError(response)}`);
+    if (response.ok) return;
+
+    lastError = evolutionErrorMessage(response.status, await parseEvolutionError(response));
+    if (!lastError.toLowerCase().includes('remotejid does not match')) {
+      throw new Error(lastError);
+    }
   }
+
+  throw new Error(lastError || 'Evolution API update error');
 }
 
 export async function deleteWhatsAppMessageForEveryone(
