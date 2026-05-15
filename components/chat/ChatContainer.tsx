@@ -437,7 +437,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content, leadPhone, instance }),
     });
-    const result = await response.json() as { error?: string; message?: { content?: string } };
+    const result = await response.json().catch(() => ({})) as { error?: string; message?: { content?: string } };
     if (!response.ok) throw new Error(result.error ?? 'No se pudo editar el mensaje');
     updateLocalMessage(messageId, result.message?.content ?? content);
   }

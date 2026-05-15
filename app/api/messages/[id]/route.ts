@@ -67,93 +67,103 @@ async function findMessage(id: string, clientId: string) {
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const profile = await getProfileClientId();
-  if (profile.error) return profile.error;
+  try {
+    const profile = await getProfileClientId();
+    if (profile.error) return profile.error;
 
-  const body = await req.json().catch(() => ({}));
-  const content = typeof body.content === 'string' ? body.content.trim() : '';
-  const { leadPhone, instance } = whatsappSyncInput(body);
+    const body = await req.json().catch(() => ({}));
+    const content = typeof body.content === 'string' ? body.content.trim() : '';
+    const { leadPhone, instance } = whatsappSyncInput(body);
 
-  if (!content) {
-    return NextResponse.json({ error: 'El mensaje no puede quedar vacio' }, { status: 400 });
+    if (!content) {
+      return NextResponse.json({ error: 'El mensaje no puede quedar vacio' }, { status: 400 });
+    }
+
+    const service = createSupabaseServiceClient();
+    const { data: message, error: findError } = await findMessage(params.id, profile.clientId);
+
+    if (findError || !message) {
+      return NextResponse.json({ error: findError?.message ?? 'Mensaje no encontrado' }, { status: findError ? 500 : 404 });
+    }
+
+    if (message.role !== 'human_agent') {
+      return NextResponse.json({ error: 'Solo se pueden editar en WhatsApp los mensajes enviados por el vendedor.' }, { status: 409 });
+    }
+
+    const key = whatsappKeyFromMessage(message as StoredMessage);
+    if (!key || !leadPhone || !instance) {
+      return NextResponse.json({
+        error: 'Este mensaje no tiene ID de WhatsApp guardado. Solo los mensajes nuevos enviados desde SCALA se pueden editar en WhatsApp.',
+      }, { status: 409 });
+    }
+
+    await updateWhatsAppMessage(instance, leadPhone, key, content, profile.clientId);
+
+    const { data, error } = await service
+      .from('messages')
+      .update({ content })
+      .eq('id', params.id)
+      .eq('client_id', profile.clientId)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      return NextResponse.json({ error: error?.message ?? 'Mensaje no encontrado' }, { status: error ? 500 : 404 });
+    }
+
+    return NextResponse.json({ message: data });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'No se pudo editar el mensaje';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  const service = createSupabaseServiceClient();
-  const { data: message, error: findError } = await findMessage(params.id, profile.clientId);
-
-  if (findError || !message) {
-    return NextResponse.json({ error: findError?.message ?? 'Mensaje no encontrado' }, { status: findError ? 500 : 404 });
-  }
-
-  if (message.role !== 'human_agent') {
-    return NextResponse.json({ error: 'Solo se pueden editar en WhatsApp los mensajes enviados por el vendedor.' }, { status: 409 });
-  }
-
-  const key = whatsappKeyFromMessage(message as StoredMessage);
-  if (!key || !leadPhone || !instance) {
-    return NextResponse.json({
-      error: 'Este mensaje no tiene ID de WhatsApp guardado. Solo los mensajes nuevos enviados desde SCALA se pueden editar en WhatsApp.',
-    }, { status: 409 });
-  }
-
-  await updateWhatsAppMessage(instance, leadPhone, key, content, profile.clientId);
-
-  const { data, error } = await service
-    .from('messages')
-    .update({ content })
-    .eq('id', params.id)
-    .eq('client_id', profile.clientId)
-    .select('*')
-    .single();
-
-  if (error || !data) {
-    return NextResponse.json({ error: error?.message ?? 'Mensaje no encontrado' }, { status: error ? 500 : 404 });
-  }
-
-  return NextResponse.json({ message: data });
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const profile = await getProfileClientId();
-  if (profile.error) return profile.error;
+  try {
+    const profile = await getProfileClientId();
+    if (profile.error) return profile.error;
 
-  const body = await req.json().catch(() => ({}));
-  const { instance } = whatsappSyncInput(body);
-  const service = createSupabaseServiceClient();
-  const { data: message, error: findError } = await findMessage(params.id, profile.clientId);
+    const body = await req.json().catch(() => ({}));
+    const { instance } = whatsappSyncInput(body);
+    const service = createSupabaseServiceClient();
+    const { data: message, error: findError } = await findMessage(params.id, profile.clientId);
 
-  if (findError || !message) {
-    return NextResponse.json({ error: findError?.message ?? 'Mensaje no encontrado' }, { status: findError ? 500 : 404 });
+    if (findError || !message) {
+      return NextResponse.json({ error: findError?.message ?? 'Mensaje no encontrado' }, { status: findError ? 500 : 404 });
+    }
+
+    if (message.role !== 'human_agent') {
+      return NextResponse.json({ error: 'Solo se pueden eliminar en WhatsApp los mensajes enviados por el vendedor.' }, { status: 409 });
+    }
+
+    const key = whatsappKeyFromMessage(message as StoredMessage);
+    if (!key || !instance) {
+      return NextResponse.json({
+        error: 'Este mensaje no tiene ID de WhatsApp guardado. Solo los mensajes nuevos enviados desde SCALA se pueden eliminar en WhatsApp.',
+      }, { status: 409 });
+    }
+
+    await deleteWhatsAppMessageForEveryone(instance, key, profile.clientId);
+
+    await service
+      .from('message_attachments')
+      .delete()
+      .eq('message_id', params.id)
+      .eq('client_id', profile.clientId);
+
+    const { error } = await service
+      .from('messages')
+      .delete()
+      .eq('id', params.id)
+      .eq('client_id', profile.clientId);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'No se pudo eliminar el mensaje';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  if (message.role !== 'human_agent') {
-    return NextResponse.json({ error: 'Solo se pueden eliminar en WhatsApp los mensajes enviados por el vendedor.' }, { status: 409 });
-  }
-
-  const key = whatsappKeyFromMessage(message as StoredMessage);
-  if (!key || !instance) {
-    return NextResponse.json({
-      error: 'Este mensaje no tiene ID de WhatsApp guardado. Solo los mensajes nuevos enviados desde SCALA se pueden eliminar en WhatsApp.',
-    }, { status: 409 });
-  }
-
-  await deleteWhatsAppMessageForEveryone(instance, key, profile.clientId);
-
-  await service
-    .from('message_attachments')
-    .delete()
-    .eq('message_id', params.id)
-    .eq('client_id', profile.clientId);
-
-  const { error } = await service
-    .from('messages')
-    .delete()
-    .eq('id', params.id)
-    .eq('client_id', profile.clientId);
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: true });
 }
