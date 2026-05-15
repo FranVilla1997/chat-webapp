@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Message, MessageAttachment } from '@/lib/types';
 
@@ -31,18 +31,57 @@ async function loadAttachments(messages: Message[]): Promise<Message[]> {
   }));
 }
 
+function byCreatedAt(a: Message, b: Message) {
+  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+}
+
+function fingerprint(messages: Message[]) {
+  return messages
+    .map((message) => {
+      const attachments = (message.attachments ?? [])
+        .map((attachment) => `${attachment.id}:${attachment.media_type}:${attachment.storage_path}`)
+        .join(',');
+      return `${messageId(message)}:${message.role}:${message.content}:${message.created_at}:${attachments}`;
+    })
+    .join('|');
+}
+
+function mergeMessages(current: Message[], fresh: Message[]) {
+  const nextById = new Map<string, Message>();
+
+  for (const message of fresh) {
+    nextById.set(messageId(message), message);
+  }
+
+  // Preserve optimistic messages until the send endpoint replaces them with the
+  // persisted record. This keeps polling from making just-sent messages flicker.
+  for (const message of current) {
+    const id = messageId(message);
+    if (id.startsWith('temp-') && !nextById.has(id)) {
+      nextById.set(id, message);
+    }
+  }
+
+  return Array.from(nextById.values()).sort(byCreatedAt);
+}
+
 export function useMessages(leadId: string, clientId: string) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<string>('connecting');
+  const fingerprintRef = useRef('');
 
   useEffect(() => {
     if (!leadId || !clientId) return;
+    let cancelled = false;
+    fingerprintRef.current = '';
 
-    async function fetchMessages() {
-      setLoading(true);
-      setError(null);
+    async function fetchMessages(options: { initial?: boolean } = {}) {
+      if (options.initial) {
+        setLoading(true);
+        setError(null);
+      }
 
       const { data, error: fetchError } = await supabase
         .from('messages')
@@ -52,14 +91,27 @@ export function useMessages(leadId: string, clientId: string) {
         .order('created_at', { ascending: true });
 
       if (fetchError) {
-        setError(fetchError.message);
+        if (options.initial) setError(fetchError.message);
       } else {
-        setMessages(await loadAttachments((data ?? []) as Message[]));
+        const fresh = await loadAttachments((data ?? []) as Message[]);
+        if (cancelled) return;
+
+        setMessages((prev) => {
+          const merged = mergeMessages(prev, fresh);
+          const nextFingerprint = fingerprint(merged);
+          if (nextFingerprint === fingerprintRef.current) return prev;
+          fingerprintRef.current = nextFingerprint;
+          return merged;
+        });
       }
-      setLoading(false);
+
+      if (options.initial && !cancelled) setLoading(false);
     }
 
-    fetchMessages();
+    fetchMessages({ initial: true });
+    const pollInterval = setInterval(() => {
+      fetchMessages();
+    }, 3500);
 
     const channel = supabase
       .channel(`messages-${leadId}`)
@@ -76,7 +128,8 @@ export function useMessages(leadId: string, clientId: string) {
               const exists = prev.some((m) => String(m.id) === String(newMsg.id));
               if (exists) return prev;
               const next = [...prev, newMsg];
-              return next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+              fingerprintRef.current = fingerprint(next);
+              return next.sort(byCreatedAt);
             });
           }
         }
@@ -101,27 +154,12 @@ export function useMessages(leadId: string, clientId: string) {
       )
       .subscribe((status) => {
         setRealtimeStatus(status);
-        if (status === 'CHANNEL_ERROR') startPolling();
       });
 
-    let pollInterval: ReturnType<typeof setInterval> | null = null;
-
-    function startPolling() {
-      if (pollInterval) return;
-      pollInterval = setInterval(async () => {
-        const { data } = await supabase
-          .from('messages')
-          .select('*')
-          .eq('lead_id', leadId)
-          .eq('client_id', clientId)
-          .order('created_at', { ascending: true });
-        if (data) setMessages(await loadAttachments(data as Message[]));
-      }, 5000);
-    }
-
     return () => {
+      cancelled = true;
       channel.unsubscribe();
-      if (pollInterval) clearInterval(pollInterval);
+      clearInterval(pollInterval);
     };
   }, [leadId, clientId]);
 

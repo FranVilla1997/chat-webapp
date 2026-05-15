@@ -77,6 +77,47 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
   const selectedLeadRef = useRef(selectedLead);
   selectedLeadRef.current = selectedLead;
 
+  async function refreshLeads(options: { markNew?: boolean } = {}) {
+    const params = new URLSearchParams();
+    if (airtableBaseId) params.set('airtable_base_id', airtableBaseId);
+    if (airtableTableId) params.set('airtable_table_id', airtableTableId);
+
+    const res = await fetch(`/api/leads${params.size ? `?${params.toString()}` : ''}`, {
+      cache: 'no-store',
+    });
+    if (!res.ok) return;
+
+    const { leads: fresh } = await res.json() as { leads: AirtableLead[] };
+    const currentIds = new Set(leadsRef.current.map(l => l.RecordID));
+    const added = fresh.filter(l => !currentIds.has(l.RecordID)).map(l => l.RecordID);
+
+    setLeads(fresh);
+    setSelectedLead(current => {
+      if (!current) return null;
+      return fresh.find(l => l.RecordID === current.RecordID) ?? current;
+    });
+
+    if (options.markNew && added.length > 0) {
+      setNewLeadIds(prev => new Set([...prev, ...added]));
+    }
+  }
+
+  async function refreshMessagePreviews() {
+    const leadIds = leadsRef.current.map(l => l.RecordID);
+    if (!leadIds.length) return;
+
+    const res = await fetch('/api/messages/latest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadIds }),
+      cache: 'no-store',
+    });
+    if (!res.ok) return;
+
+    const { lastMessages: fresh } = await res.json() as { lastMessages: Record<string, LastMessage> };
+    setMsgPreviews(prev => ({ ...prev, ...fresh }));
+  }
+
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('scala_seen_leads') ?? '{}');
@@ -92,21 +133,31 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
         async (payload) => {
           const notifClientId = (payload.new as { client_id?: string }).client_id;
           if (clientId && notifClientId && notifClientId !== clientId) return;
-          const params = new URLSearchParams();
-          if (airtableBaseId) params.set('airtable_base_id', airtableBaseId);
-          if (airtableTableId) params.set('airtable_table_id', airtableTableId);
-          const res = await fetch(`/api/leads${params.size ? `?${params.toString()}` : ''}`);
-          if (!res.ok) return;
-          const { leads: fresh } = await res.json() as { leads: AirtableLead[] };
-          const currentIds = new Set(leadsRef.current.map(l => l.RecordID));
-          const added = fresh.filter(l => !currentIds.has(l.RecordID)).map(l => l.RecordID);
-          setLeads(fresh);
-          if (added.length > 0) setNewLeadIds(prev => new Set([...prev, ...added]));
+          await refreshLeads({ markNew: true });
         }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [clientId, airtableBaseId, airtableTableId]);
+
+  // Polling suave: mantiene leads y etapas al día aunque Realtime/Airtable no notifique.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshLeads().catch(() => undefined);
+    }, 12000);
+
+    return () => clearInterval(interval);
+  }, [airtableBaseId, airtableTableId]);
+
+  // Polling suave de previews: evita tener que recargar para ver nuevas conversaciones.
+  useEffect(() => {
+    refreshMessagePreviews().catch(() => undefined);
+    const interval = setInterval(() => {
+      refreshMessagePreviews().catch(() => undefined);
+    }, 4500);
+
+    return () => clearInterval(interval);
+  }, [clientId]);
 
   // Realtime: nuevos mensajes en cualquier lead
   useEffect(() => {
