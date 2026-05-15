@@ -171,5 +171,24 @@ export function useMessages(leadId: string, clientId: string) {
     setMessages((prev) => prev.map((m) => (String(m.id) === String(tempId) ? real : m)));
   }
 
-  return { messages, loading, error, realtimeStatus, addOptimisticMessage, replaceOptimisticMessage };
+  function updateLocalMessage(messageId: string | number, content: string) {
+    setMessages((prev) => prev.map((message) => (
+      String(message.id) === String(messageId) ? { ...message, content } : message
+    )));
+  }
+
+  function deleteLocalMessage(messageId: string | number) {
+    setMessages((prev) => prev.filter((message) => String(message.id) !== String(messageId)));
+  }
+
+  return {
+    messages,
+    loading,
+    error,
+    realtimeStatus,
+    addOptimisticMessage,
+    replaceOptimisticMessage,
+    updateLocalMessage,
+    deleteLocalMessage,
+  };
 }

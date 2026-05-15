@@ -6,6 +6,8 @@ import type { Message, MessageAttachment } from '@/lib/types';
 interface MessageBubbleProps {
   message: Message;
   isOptimistic?: boolean;
+  onEdit?: (messageId: string | number, content: string) => Promise<void>;
+  onDelete?: (messageId: string | number) => Promise<void>;
 }
 
 function formatTime(iso: string) {
@@ -128,8 +130,163 @@ const roleLabel: React.CSSProperties = {
   fontFamily: MONO,
 };
 
-export function MessageBubble({ message, isOptimistic }: MessageBubbleProps) {
+function MessageActions({
+  message,
+  disabled,
+  onEdit,
+  onDelete,
+}: {
+  message: Message;
+  disabled?: boolean;
+  onEdit?: (messageId: string | number, content: string) => Promise<void>;
+  onDelete?: (messageId: string | number) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(message.content);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!editing) setDraft(message.content);
+  }, [message.content, editing]);
+
+  if (disabled || (!onEdit && !onDelete) || message.role === 'system') return null;
+
+  async function saveEdit() {
+    const content = draft.trim();
+    if (!content || content === message.content) {
+      setEditing(false);
+      setDraft(message.content);
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      await onEdit?.(message.id, content);
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo editar');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteMessage() {
+    if (!confirm('¿Eliminar este mensaje de la conversación?')) return;
+
+    setBusy(true);
+    setError(null);
+    try {
+      await onDelete?.(message.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo eliminar');
+      setBusy(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          rows={3}
+          autoFocus
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            resize: 'vertical',
+            borderRadius: 4,
+            border: '1px solid rgba(255,255,255,0.14)',
+            background: 'rgba(0,0,0,0.25)',
+            color: '#e4e4e8',
+            padding: '8px 10px',
+            fontSize: 12,
+            lineHeight: 1.45,
+            outline: 'none',
+          }}
+        />
+        {error && <span style={{ fontSize: 10, color: '#f87171' }}>{error}</span>}
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+          <button
+            onClick={() => { setEditing(false); setDraft(message.content); setError(null); }}
+            disabled={busy}
+            style={{
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'transparent',
+              color: 'rgba(255,255,255,0.55)',
+              borderRadius: 4,
+              padding: '4px 8px',
+              fontSize: 10,
+              cursor: busy ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={saveEdit}
+            disabled={busy}
+            style={{
+              border: '1px solid rgba(107,221,161,0.35)',
+              background: 'rgba(107,221,161,0.12)',
+              color: '#6bdda1',
+              borderRadius: 4,
+              padding: '4px 8px',
+              fontSize: 10,
+              fontWeight: 700,
+              cursor: busy ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {busy ? 'Guardando...' : 'Guardar'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'inline-flex', gap: 8, marginTop: 4 }}>
+      {onEdit && (
+        <button
+          onClick={() => setEditing(true)}
+          disabled={busy}
+          style={{
+            border: 'none',
+            background: 'transparent',
+            color: 'rgba(255,255,255,0.35)',
+            padding: 0,
+            fontSize: 10,
+            cursor: busy ? 'not-allowed' : 'pointer',
+          }}
+        >
+          Editar
+        </button>
+      )}
+      {onDelete && (
+        <button
+          onClick={deleteMessage}
+          disabled={busy}
+          style={{
+            border: 'none',
+            background: 'transparent',
+            color: 'rgba(248,113,113,0.55)',
+            padding: 0,
+            fontSize: 10,
+            cursor: busy ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {busy ? 'Eliminando...' : 'Eliminar'}
+        </button>
+      )}
+      {error && <span style={{ fontSize: 10, color: '#f87171' }}>{error}</span>}
+    </div>
+  );
+}
+
+export function MessageBubble({ message, isOptimistic, onEdit, onDelete }: MessageBubbleProps) {
   const { role, content, created_at, was_audio } = message;
+  const canManage = !isOptimistic && !String(message.id).startsWith('temp-');
 
   /* ── System — centered pill ─────────────────── */
   if (role === 'system') {
@@ -163,6 +320,7 @@ export function MessageBubble({ message, isOptimistic }: MessageBubbleProps) {
             {was_audio && <AudioBadge />}
             <p style={{ ...msgText, color: '#e4e4e8' }}>{content}</p>
             <Attachments attachments={message.attachments} />
+            <MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={onDelete} />
           </div>
           <span style={{ fontSize: 10, color: '#404050', paddingLeft: 2, fontFamily: MONO }}>
             {formatTime(created_at)}
@@ -186,6 +344,7 @@ export function MessageBubble({ message, isOptimistic }: MessageBubbleProps) {
             {was_audio && <AudioBadge />}
             <p style={{ ...msgText, color: '#fff' }}>{content}</p>
             <Attachments attachments={message.attachments} />
+            <MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={onDelete} />
           </div>
           <span style={{ fontSize: 10, color: '#404050', paddingRight: 2, fontFamily: MONO }}>
             {formatTime(created_at)}
@@ -209,6 +368,7 @@ export function MessageBubble({ message, isOptimistic }: MessageBubbleProps) {
           {was_audio && <AudioBadge />}
           <p style={{ ...msgText, color: '#e4e4e8' }}>{content}</p>
           <Attachments attachments={message.attachments} />
+          <MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={onDelete} />
         </div>
         <span style={{ fontSize: 10, color: '#404050', paddingRight: 2, fontFamily: MONO }}>
           {formatTime(created_at)}

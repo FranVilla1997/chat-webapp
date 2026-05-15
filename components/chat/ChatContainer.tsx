@@ -242,7 +242,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
   const router = useRouter();
   const {
     messages, loading, error, realtimeStatus,
-    addOptimisticMessage, replaceOptimisticMessage,
+    addOptimisticMessage, replaceOptimisticMessage, updateLocalMessage, deleteLocalMessage,
   } = useMessages(leadId, clientId);
 
   const { sendMessage, sending, sendError } = useSendMessage({
@@ -431,6 +431,26 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
     }
   }
 
+  async function handleEditMessage(messageId: string | number, content: string) {
+    const response = await fetch(`/api/messages/${messageId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    const result = await response.json() as { error?: string; message?: { content?: string } };
+    if (!response.ok) throw new Error(result.error ?? 'No se pudo editar el mensaje');
+    updateLocalMessage(messageId, result.message?.content ?? content);
+  }
+
+  async function handleDeleteMessage(messageId: string | number) {
+    const response = await fetch(`/api/messages/${messageId}`, {
+      method: 'DELETE',
+    });
+    const result = await response.json().catch(() => ({})) as { error?: string };
+    if (!response.ok) throw new Error(result.error ?? 'No se pudo eliminar el mensaje');
+    deleteLocalMessage(messageId);
+  }
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -556,6 +576,8 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
                   key={msg.id}
                   message={msg}
                   isOptimistic={String(msg.id).startsWith('temp-')}
+                  onEdit={handleEditMessage}
+                  onDelete={handleDeleteMessage}
                 />
               ))
             )}
