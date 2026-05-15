@@ -6,6 +6,24 @@ export interface Message {
   content: string;
   was_audio: boolean;
   created_at: string;
+  attachments?: MessageAttachment[];
+}
+
+export type MessageAttachmentMediaType = 'audio' | 'image' | 'video' | 'document';
+
+export interface MessageAttachment {
+  id: string;
+  message_id: string;
+  lead_id: string;
+  client_id: string;
+  storage_bucket: string;
+  storage_path: string;
+  media_type: MessageAttachmentMediaType;
+  mime_type: string;
+  file_name: string;
+  caption?: string | null;
+  duration_seconds?: number | null;
+  created_at?: string;
 }
 
 export interface ConversationParams {

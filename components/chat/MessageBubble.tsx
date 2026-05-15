@@ -1,4 +1,7 @@
-import type { Message } from '@/lib/types';
+'use client';
+
+import { useEffect, useState } from 'react';
+import type { Message, MessageAttachment } from '@/lib/types';
 
 interface MessageBubbleProps {
   message: Message;
@@ -20,6 +23,91 @@ function AudioBadge() {
       </svg>
       Audio transcripto
     </span>
+  );
+}
+
+function AttachmentViewer({ attachment }: { attachment: MessageAttachment }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setUrl(null);
+    setError(null);
+
+    fetch(`/api/message-attachments/${attachment.id}/signed-url`)
+      .then(async (res) => {
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error ?? 'No se pudo abrir el archivo');
+        return body.url as string;
+      })
+      .then((signedUrl) => { if (alive) setUrl(signedUrl); })
+      .catch((err) => { if (alive) setError(err instanceof Error ? err.message : 'No se pudo abrir el archivo'); });
+
+    return () => { alive = false; };
+  }, [attachment.id]);
+
+  if (error) {
+    return <p style={{ margin: '8px 0 0', color: '#f87171', fontSize: 11 }}>{error}</p>;
+  }
+
+  if (!url) {
+    return <p style={{ margin: '8px 0 0', color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>Cargando archivo...</p>;
+  }
+
+  if (attachment.media_type === 'audio') {
+    return (
+      <audio
+        controls
+        preload="metadata"
+        src={url}
+        style={{ display: 'block', width: 'min(280px, 100%)', marginTop: 8 }}
+      />
+    );
+  }
+
+  if (attachment.media_type === 'image') {
+    return (
+      <a href={url} target="_blank" rel="noreferrer" style={{ display: 'block', marginTop: 8 }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={url}
+          alt={attachment.caption || attachment.file_name || 'Imagen enviada'}
+          style={{ display: 'block', maxWidth: 280, maxHeight: 260, borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)', objectFit: 'cover' }}
+        />
+      </a>
+    );
+  }
+
+  if (attachment.media_type === 'video') {
+    return (
+      <video
+        controls
+        preload="metadata"
+        src={url}
+        style={{ display: 'block', maxWidth: 320, width: '100%', maxHeight: 260, marginTop: 8, borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)' }}
+      />
+    );
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      style={{ display: 'inline-flex', marginTop: 8, color: '#88adea', fontSize: 12, textDecoration: 'none' }}
+    >
+      Ver archivo: {attachment.file_name}
+    </a>
+  );
+}
+
+function Attachments({ attachments }: { attachments?: MessageAttachment[] }) {
+  if (!attachments?.length) return null;
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      {attachments.map((attachment) => <AttachmentViewer key={attachment.id} attachment={attachment} />)}
+    </div>
   );
 }
 
@@ -74,6 +162,7 @@ export function MessageBubble({ message, isOptimistic }: MessageBubbleProps) {
           }}>
             {was_audio && <AudioBadge />}
             <p style={{ ...msgText, color: '#e4e4e8' }}>{content}</p>
+            <Attachments attachments={message.attachments} />
           </div>
           <span style={{ fontSize: 10, color: '#404050', paddingLeft: 2, fontFamily: MONO }}>
             {formatTime(created_at)}
@@ -96,6 +185,7 @@ export function MessageBubble({ message, isOptimistic }: MessageBubbleProps) {
           }}>
             {was_audio && <AudioBadge />}
             <p style={{ ...msgText, color: '#fff' }}>{content}</p>
+            <Attachments attachments={message.attachments} />
           </div>
           <span style={{ fontSize: 10, color: '#404050', paddingRight: 2, fontFamily: MONO }}>
             {formatTime(created_at)}
@@ -118,6 +208,7 @@ export function MessageBubble({ message, isOptimistic }: MessageBubbleProps) {
         }}>
           {was_audio && <AudioBadge />}
           <p style={{ ...msgText, color: '#e4e4e8' }}>{content}</p>
+          <Attachments attachments={message.attachments} />
         </div>
         <span style={{ fontSize: 10, color: '#404050', paddingRight: 2, fontFamily: MONO }}>
           {formatTime(created_at)}

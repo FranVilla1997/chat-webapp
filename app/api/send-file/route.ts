@@ -16,6 +16,12 @@ function mediaTypeFromMime(mimeType: string): WhatsAppMediaType {
   return 'document';
 }
 
+function attachmentMediaType(mimeType: string): 'image' | 'video' | 'document' {
+  if (mimeType.startsWith('image/')) return 'image';
+  if (mimeType.startsWith('video/')) return 'video';
+  return 'document';
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { leadPhone, leadId, clientId, instance, caption, storagePath, fileName, mimeType } = await req.json() as {
@@ -66,12 +72,32 @@ export async function POST(req: NextRequest) {
 
     if (msgError) throw new Error(msgError.message);
 
+    const { data: attachment, error: attachmentError } = await supabase
+      .from('message_attachments')
+      .insert({
+        message_id: String(message.id),
+        lead_id: leadId,
+        client_id: clientId,
+        storage_bucket: ATTACHMENTS_BUCKET,
+        storage_path: storagePath,
+        media_type: attachmentMediaType(mimeType),
+        mime_type: mimeType,
+        file_name: fileName,
+        caption: caption?.trim() || null,
+      })
+      .select()
+      .single();
+
+    if (attachmentError) {
+      console.error('message_attachments insert error:', attachmentError);
+    }
+
     await supabase.from('n8n_chat_histories').insert({
       session_id: leadPhone,
       message: { type: 'ai', text: `[${label} enviado por el vendedor]${caption?.trim() ? ` ${caption.trim()}` : ''}` },
     });
 
-    return NextResponse.json({ message });
+    return NextResponse.json({ message: attachment ? { ...message, attachments: [attachment] } : message });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Internal server error';
     return NextResponse.json({ error: message }, { status: 500 });

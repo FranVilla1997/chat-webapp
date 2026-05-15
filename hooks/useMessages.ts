@@ -2,7 +2,34 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { Message } from '@/lib/types';
+import type { Message, MessageAttachment } from '@/lib/types';
+
+function messageId(message: Pick<Message, 'id'>) {
+  return String(message.id);
+}
+
+async function loadAttachments(messages: Message[]): Promise<Message[]> {
+  const ids = messages.map(messageId);
+  if (!ids.length) return messages;
+
+  const { data } = await supabase
+    .from('message_attachments')
+    .select('*')
+    .in('message_id', ids)
+    .order('created_at', { ascending: true });
+
+  const byMessage = new Map<string, MessageAttachment[]>();
+  for (const attachment of (data ?? []) as MessageAttachment[]) {
+    const list = byMessage.get(attachment.message_id) ?? [];
+    list.push(attachment);
+    byMessage.set(attachment.message_id, list);
+  }
+
+  return messages.map((message) => ({
+    ...message,
+    attachments: byMessage.get(messageId(message)) ?? [],
+  }));
+}
 
 export function useMessages(leadId: string, clientId: string) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -27,7 +54,7 @@ export function useMessages(leadId: string, clientId: string) {
       if (fetchError) {
         setError(fetchError.message);
       } else {
-        setMessages(data ?? []);
+        setMessages(await loadAttachments((data ?? []) as Message[]));
       }
       setLoading(false);
     }
@@ -40,7 +67,7 @@ export function useMessages(leadId: string, clientId: string) {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages' },
         (payload) => {
-          const newMsg = payload.new as Message;
+          const newMsg = { ...(payload.new as Message), attachments: [] };
           if (
             String(newMsg.lead_id) === String(leadId) &&
             String(newMsg.client_id) === String(clientId)
@@ -51,6 +78,24 @@ export function useMessages(leadId: string, clientId: string) {
               const next = [...prev, newMsg];
               return next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
             });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'message_attachments' },
+        (payload) => {
+          const attachment = payload.new as MessageAttachment;
+          if (
+            String(attachment.lead_id) === String(leadId) &&
+            String(attachment.client_id) === String(clientId)
+          ) {
+            setMessages((prev) => prev.map((message) => {
+              if (messageId(message) !== attachment.message_id) return message;
+              const current = message.attachments ?? [];
+              if (current.some((item) => item.id === attachment.id)) return message;
+              return { ...message, attachments: [...current, attachment] };
+            }));
           }
         }
       )
@@ -70,7 +115,7 @@ export function useMessages(leadId: string, clientId: string) {
           .eq('lead_id', leadId)
           .eq('client_id', clientId)
           .order('created_at', { ascending: true });
-        if (data) setMessages(data);
+        if (data) setMessages(await loadAttachments(data as Message[]));
       }, 5000);
     }
 
