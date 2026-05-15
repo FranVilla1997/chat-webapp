@@ -83,6 +83,83 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
   leadsRef.current = leads;
   const selectedLeadRef = useRef(selectedLead);
   selectedLeadRef.current = selectedLead;
+  const knownPreviewTimesRef = useRef<Record<string, string>>(
+    Object.fromEntries(Object.entries(lastMessages).map(([leadId, message]) => [leadId, message.created_at]))
+  );
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const lastSoundAtRef = useRef(0);
+
+  function getAudioContext() {
+    if (typeof window === 'undefined') return null;
+    if (audioContextRef.current) return audioContextRef.current;
+
+    const AudioContextCtor =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+    if (!AudioContextCtor) return null;
+    audioContextRef.current = new AudioContextCtor();
+    return audioContextRef.current;
+  }
+
+  function playNotificationSound() {
+    const now = Date.now();
+    if (now - lastSoundAtRef.current < 900) return;
+
+    const ctx = getAudioContext();
+    if (!ctx || ctx.state !== 'running') return;
+
+    lastSoundAtRef.current = now;
+    const start = ctx.currentTime;
+    const gain = ctx.createGain();
+    const first = ctx.createOscillator();
+    const second = ctx.createOscillator();
+
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.035, start + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.32);
+
+    first.type = 'sine';
+    second.type = 'sine';
+    first.frequency.setValueAtTime(880, start);
+    second.frequency.setValueAtTime(1175, start + 0.11);
+
+    first.connect(gain);
+    second.connect(gain);
+    gain.connect(ctx.destination);
+
+    first.start(start);
+    first.stop(start + 0.12);
+    second.start(start + 0.13);
+    second.stop(start + 0.34);
+  }
+
+  function shouldNotifyIncoming(
+    leadId: string,
+    message: LastMessage,
+    options: { allowFirst?: boolean } = {}
+  ) {
+    if (message.role !== 'user') return false;
+
+    const previous = knownPreviewTimesRef.current[leadId];
+    knownPreviewTimesRef.current[leadId] = message.created_at;
+
+    if (!previous) return Boolean(options.allowFirst);
+    return new Date(message.created_at).getTime() > new Date(previous).getTime();
+  }
+
+  function showIncomingToast(lead: AirtableLead, content: string) {
+    if (selectedLeadRef.current?.RecordID === lead.RecordID) return;
+
+    const toastId = `${lead.RecordID}-${Date.now()}`;
+    setToasts(prev => [...prev.slice(-2), { id: toastId, lead, content }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== toastId)), 8000);
+  }
+
+  function notifyIncomingMessage(lead: AirtableLead, message: LastMessage) {
+    playNotificationSound();
+    showIncomingToast(lead, message.content);
+  }
 
   async function refreshLeads(options: { markNew?: boolean } = {}) {
     const params = new URLSearchParams();
@@ -122,6 +199,12 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
     if (!res.ok) return;
 
     const { lastMessages: fresh } = await res.json() as { lastMessages: Record<string, LastMessage> };
+    for (const [leadId, message] of Object.entries(fresh)) {
+      if (!shouldNotifyIncoming(leadId, message)) continue;
+      const lead = leadsRef.current.find(l => l.RecordID === leadId);
+      if (lead) notifyIncomingMessage(lead, message);
+    }
+
     setMsgPreviews(prev => ({ ...prev, ...fresh }));
   }
 
@@ -130,6 +213,21 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
       const stored = JSON.parse(localStorage.getItem('scala_seen_leads') ?? '{}');
       setSeenAt(stored);
     } catch { /* empty */ }
+  }, []);
+
+  useEffect(() => {
+    const unlockAudio = () => {
+      const ctx = getAudioContext();
+      ctx?.resume().catch(() => undefined);
+    };
+
+    window.addEventListener('pointerdown', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
   }, []);
 
   // Realtime: nuevos leads
@@ -178,19 +276,16 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
           // Solo leads de este vendedor
           const lead = leadsRef.current.find(l => l.RecordID === msg.lead_id);
           if (!lead) return;
+          const latestMessage = { content: msg.content, role: msg.role, created_at: msg.created_at };
+          if (shouldNotifyIncoming(msg.lead_id, latestMessage, { allowFirst: true })) {
+            notifyIncomingMessage(lead, latestMessage);
+          }
 
           // Actualizar preview del mensaje
           setMsgPreviews(prev => ({
             ...prev,
-            [msg.lead_id]: { content: msg.content, role: msg.role, created_at: msg.created_at },
+            [msg.lead_id]: latestMessage,
           }));
-
-          // Toast solo si el chat no está abierto
-          if (selectedLeadRef.current?.RecordID !== msg.lead_id) {
-            const toastId = `${msg.lead_id}-${Date.now()}`;
-            setToasts(prev => [...prev.slice(-2), { id: toastId, lead, content: msg.content }]);
-            setTimeout(() => setToasts(prev => prev.filter(t => t.id !== toastId)), 8000);
-          }
         }
       )
       .subscribe();
