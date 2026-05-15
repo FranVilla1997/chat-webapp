@@ -220,7 +220,7 @@ export async function updateWhatsAppMessage(
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: config.apiKey },
     body: JSON.stringify({
-      number: Number(normalizePhone(number)),
+      number: normalizePhone(number),
       text,
       key: {
         remoteJid: key.remoteJid,
