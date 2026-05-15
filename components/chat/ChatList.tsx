@@ -55,6 +55,13 @@ function formatTime(iso: string) {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
 }
 
+function lastActivityTime(lead: AirtableLead, previews: Record<string, LastMessage>) {
+  const previewTime = previews[lead.RecordID]?.created_at;
+  const leadTime = lead.last_message_at;
+  const fallbackTime = lead.created_at;
+  return new Date(previewTime || leadTime || fallbackTime || 0).getTime();
+}
+
 interface Toast {
   id: string;
   lead: AirtableLead;
@@ -209,9 +216,10 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
     return list.sort((a, b) => {
       const aNew = newLeadIds.has(a.RecordID) ? 0 : 1;
       const bNew = newLeadIds.has(b.RecordID) ? 0 : 1;
-      return aNew - bNew;
+      if (aNew !== bNew) return aNew - bNew;
+      return lastActivityTime(b, msgPreviews) - lastActivityTime(a, msgPreviews);
     });
-  }, [leads, activeStage, search, newLeadIds]);
+  }, [leads, activeStage, search, newLeadIds, msgPreviews]);
 
   async function handleLogout() {
     setLoggingOut(true);
