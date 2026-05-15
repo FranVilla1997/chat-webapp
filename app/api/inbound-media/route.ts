@@ -11,7 +11,7 @@ interface InboundMediaPayload {
   content?: string;
   mediaBase64?: string;
   mediaUrl?: string;
-  mediaType?: MessageAttachmentMediaType;
+  mediaType?: MessageAttachmentMediaType | string;
   mimeType?: string;
   fileName?: string;
   caption?: string;
@@ -32,6 +32,15 @@ function mediaTypeFromMime(mimeType: string): MessageAttachmentMediaType {
   if (mimeType.startsWith('image/')) return 'image';
   if (mimeType.startsWith('video/')) return 'video';
   return 'document';
+}
+
+function normalizeMediaType(value: string | undefined, mimeType: string): MessageAttachmentMediaType {
+  const normalized = (value ?? '').toLowerCase();
+  if (normalized.includes('audio')) return 'audio';
+  if (normalized.includes('image') || normalized.includes('foto')) return 'image';
+  if (normalized.includes('video')) return 'video';
+  if (normalized.includes('document') || normalized.includes('file') || normalized.includes('archivo')) return 'document';
+  return mediaTypeFromMime(mimeType);
 }
 
 function defaultContent(mediaType: MessageAttachmentMediaType, caption?: string) {
@@ -89,7 +98,7 @@ export async function POST(req: NextRequest) {
     const payload = await req.json() as InboundMediaPayload;
     const { leadId, clientId } = payload;
     const mimeType = payload.mimeType ?? 'application/octet-stream';
-    const mediaType = payload.mediaType ?? mediaTypeFromMime(mimeType);
+    const mediaType = normalizeMediaType(payload.mediaType, mimeType);
     const fileName = safeFileName(payload.fileName ?? `${mediaType}-${Date.now()}`);
 
     if (!leadId || !clientId) {
