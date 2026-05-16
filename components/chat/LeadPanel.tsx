@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import type { LeadInfo } from '@/lib/types';
 import type { Followup } from '@/hooks/useFollowups';
 
@@ -8,6 +9,13 @@ interface LeadPanelProps {
   followups: Followup[];
   open: boolean;
   onClose: () => void;
+  onStageChange?: (stageId: string) => Promise<{ name: string; displayName: string }>;
+}
+
+interface StageOption {
+  id: string;
+  name: string;
+  displayName: string;
 }
 
 const MONO = `'SF Mono', 'Consolas', 'Liberation Mono', monospace`;
@@ -161,11 +169,46 @@ function Pill({ children, color }: { children: React.ReactNode; color: string })
   );
 }
 
-export function LeadPanel({ lead, followups, open, onClose }: LeadPanelProps) {
+export function LeadPanel({ lead, followups, open, onClose, onStageChange }: LeadPanelProps) {
   const phone = formatPhone(lead.phone);
   const stageBadge = lead.stage ? getStageBadge(lead.stage) : null;
   const pending = followups.filter(f => f.status === 'pending');
   const rest    = followups.filter(f => f.status !== 'pending');
+  const [stages, setStages] = useState<StageOption[]>([]);
+  const [loadingStages, setLoadingStages] = useState(false);
+  const [stageBusy, setStageBusy] = useState(false);
+  const [stageError, setStageError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || stages.length) return;
+    setLoadingStages(true);
+    fetch('/api/stages')
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({})) as { stages?: StageOption[]; error?: string };
+        if (!res.ok) throw new Error(data.error ?? 'No se pudieron cargar las etapas');
+        setStages(data.stages ?? []);
+      })
+      .catch((err) => setStageError(err instanceof Error ? err.message : 'No se pudieron cargar las etapas'))
+      .finally(() => setLoadingStages(false));
+  }, [open, stages.length]);
+
+  const selectedStageId = useMemo(() => {
+    const stage = (lead.stage ?? '').toLowerCase();
+    return stages.find((item) => item.name.toLowerCase() === stage || item.displayName.toLowerCase() === stage)?.id ?? '';
+  }, [lead.stage, stages]);
+
+  async function changeStage(stageId: string) {
+    if (!stageId || !onStageChange) return;
+    setStageBusy(true);
+    setStageError(null);
+    try {
+      await onStageChange(stageId);
+    } catch (err) {
+      setStageError(err instanceof Error ? err.message : 'No se pudo actualizar la etapa');
+    } finally {
+      setStageBusy(false);
+    }
+  }
 
   return (
     <aside style={{
@@ -210,7 +253,7 @@ export function LeadPanel({ lead, followups, open, onClose }: LeadPanelProps) {
         {/* Stage + Score */}
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
           {lead.stage && stageBadge && (
-            <div>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <Label>Etapa</Label>
               <span style={{
                 display: 'inline-block', padding: '3px 8px', borderRadius: 3,
@@ -220,6 +263,31 @@ export function LeadPanel({ lead, followups, open, onClose }: LeadPanelProps) {
               }}>
                 {lead.stage.replace('_', ' ')}
               </span>
+              {onStageChange && (
+                <div style={{ marginTop: 8 }}>
+                  <select
+                    value={selectedStageId}
+                    disabled={loadingStages || stageBusy}
+                    onChange={(event) => void changeStage(event.target.value)}
+                    style={{
+                      width: '100%',
+                      border: '1px solid #2a2a38',
+                      background: '#12121a',
+                      color: '#e4e4e8',
+                      borderRadius: 4,
+                      padding: '6px 8px',
+                      fontSize: 11,
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="">{loadingStages ? 'Cargando etapas...' : 'Cambiar etapa'}</option>
+                    {stages.map((stage) => (
+                      <option key={stage.id} value={stage.id}>{stage.displayName}</option>
+                    ))}
+                  </select>
+                  {stageError && <p style={{ margin: '6px 0 0', color: '#f87171', fontSize: 10 }}>{stageError}</p>}
+                </div>
+              )}
             </div>
           )}
           {lead.score && (

@@ -260,6 +260,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
   const [stageError, setStageError]       = useState<string | null>(null);
   const [saleModalOpen, setSaleModalOpen] = useState(false);
   const [saleNotice, setSaleNotice]       = useState<string | null>(null);
+  const [currentStage, setCurrentStage]   = useState(leadInfo?.stage ?? '');
 
   async function handleSendAudio(base64: string, duration: number) {
     setAudioSending(true);
@@ -365,9 +366,9 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
   const [botResumeAt, setBotResumeAt] = useState(leadInfo?.botResumeAt ?? '');
   const [pauseBusy, setPauseBusy] = useState(false);
   const enrichedLeadInfo: LeadInfo | undefined = leadInfo
-    ? { ...leadInfo, sourceInstance: leadInfo.sourceInstance || instance }
+    ? { ...leadInfo, stage: currentStage || leadInfo.stage, sourceInstance: leadInfo.sourceInstance || instance }
     : instance
-      ? { sourceInstance: instance }
+      ? { stage: currentStage, sourceInstance: instance }
       : undefined;
   const hasLeadInfo = !!(
     enrichedLeadInfo?.name ||
@@ -378,6 +379,10 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
   );
 
   const isCalificado = enrichedLeadInfo?.stage?.toLowerCase() === 'calificado';
+
+  useEffect(() => {
+    setCurrentStage(leadInfo?.stage ?? '');
+  }, [leadInfo?.stage, leadId]);
 
   async function handlePresupuestar() {
     setStageUpdating(true);
@@ -432,6 +437,26 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
     } finally {
       setPauseBusy(false);
     }
+  }
+
+  async function handleChangeStage(stageId: string) {
+    setStageError(null);
+    setSaleNotice(null);
+    const response = await fetch('/api/update-lead-stage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recordId: leadId, stageId }),
+    });
+    const result = await response.json().catch(() => ({})) as {
+      error?: string;
+      stage?: { name: string; displayName: string };
+    };
+    if (!response.ok || !result.stage) {
+      throw new Error(result.error ?? 'No se pudo actualizar la etapa');
+    }
+    setCurrentStage(result.stage.name);
+    setSaleNotice(`Etapa actualizada a ${result.stage.displayName}.`);
+    return result.stage;
   }
 
   async function handleEditMessage(messageId: string | number, content: string) {
@@ -637,6 +662,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
             followups={followups}
             open={effectivePanelOpen}
             onClose={() => setPanelOpen(false)}
+            onStageChange={handleChangeStage}
           />
         )}
       </div>

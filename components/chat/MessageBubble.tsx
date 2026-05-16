@@ -173,7 +173,10 @@ function MessageActions({
   }
 
   async function deleteMessage() {
-    if (!confirm('¿Eliminar este mensaje de WhatsApp para todos?')) return;
+    const question = message.role === 'assistant'
+      ? 'Eliminar este mensaje del Sentinel del chat? Si tiene ID de WhatsApp guardado tambien se intentara borrar para todos.'
+      : 'Eliminar este mensaje de WhatsApp para todos?';
+    if (!confirm(question)) return;
 
     setBusy(true);
     setError(null);
@@ -289,7 +292,7 @@ export function MessageBubble({ message, isOptimistic, onEdit, onDelete }: Messa
     !isOptimistic &&
     !String(message.id).startsWith('temp-') &&
     (message.role === 'assistant' || (message.role === 'human_agent' && hasWhatsAppKey));
-  const canDelete = message.role === 'human_agent' && hasWhatsAppKey;
+  const canDelete = message.role === 'assistant' || (message.role === 'human_agent' && hasWhatsAppKey);
 
   /* ── System — centered pill ─────────────────── */
   if (role === 'system') {

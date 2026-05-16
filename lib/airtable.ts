@@ -16,6 +16,13 @@ export interface AirtableSeller {
   active: boolean;
 }
 
+export interface AirtableStage {
+  id: string;
+  name: string;
+  displayName: string;
+  order: number;
+}
+
 export interface CreateSaleInput {
   leadRecordId: string;
   sellerRecordId: string;
@@ -56,6 +63,10 @@ function salesTableId(): string {
 
 function sellersTableId(): string {
   return process.env.AIRTABLE_SELLERS_TABLE_ID || 'tblEcyyvFdnQYlTl6';
+}
+
+function stagesTableId(): string {
+  return process.env.AIRTABLE_STAGES_TABLE_ID || 'tblFMvB5bjBmq5Hl8';
 }
 
 function extractUrl(v: unknown): string {
@@ -179,6 +190,46 @@ export async function updateLeadFields(recordId: string, fields: Record<string, 
     body: JSON.stringify({ fields }),
   });
   if (!res.ok) throw new Error(`Airtable error: ${res.status} ${await res.text()}`);
+}
+
+export async function getPipelineStages(): Promise<AirtableStage[]> {
+  const stages: AirtableStage[] = [];
+  let offset: string | undefined;
+  const baseUrl = getTableUrl(stagesTableId());
+
+  do {
+    let url = `${baseUrl}?pageSize=100&cellFormat=string&timeZone=America%2FArgentina%2FBuenos_Aires&userLocale=es`;
+    if (offset) url += `&offset=${offset}`;
+
+    const res = await fetch(url, { headers: HEADERS, cache: 'no-store' });
+    if (!res.ok) throw new Error(`Airtable stages error: ${res.status} ${await res.text()}`);
+
+    const data = await res.json() as {
+      records: { id: string; fields: Record<string, unknown> }[];
+      offset?: string;
+    };
+
+    stages.push(...data.records.flatMap((record) => {
+      const name = String(record.fields['stage_name'] ?? '').trim();
+      if (!name) return [];
+      return [{
+        id: record.id,
+        name,
+        displayName: String(record.fields['stage_display_name'] ?? name).trim(),
+        order: Number(record.fields['stage_order'] ?? 999),
+      }];
+    }));
+    offset = data.offset;
+  } while (offset);
+
+  return stages.sort((a, b) => a.order - b.order || a.displayName.localeCompare(b.displayName));
+}
+
+export async function updateLeadStage(recordId: string, stageRecordId: string): Promise<void> {
+  await updateLeadFields(recordId, {
+    current_stage: [stageRecordId],
+    stage_changed_at: new Date().toISOString(),
+  });
 }
 
 export async function getAirtableSellers(): Promise<AirtableSeller[]> {

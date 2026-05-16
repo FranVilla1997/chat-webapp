@@ -132,18 +132,20 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       return NextResponse.json({ error: findError?.message ?? 'Mensaje no encontrado' }, { status: findError ? 500 : 404 });
     }
 
-    if (message.role !== 'human_agent') {
-      return NextResponse.json({ error: 'Solo se pueden eliminar en WhatsApp los mensajes enviados por el vendedor.' }, { status: 409 });
+    if (!['human_agent', 'assistant'].includes(message.role)) {
+      return NextResponse.json({ error: 'Solo se pueden eliminar mensajes del vendedor o del Sentinel.' }, { status: 409 });
     }
 
     const key = whatsappKeyFromMessage(message as StoredMessage);
-    if (!key || !instance) {
+    if (message.role === 'human_agent' && (!key || !instance)) {
       return NextResponse.json({
         error: 'Este mensaje no tiene ID de WhatsApp guardado. Solo los mensajes nuevos enviados desde SCALA se pueden eliminar en WhatsApp.',
       }, { status: 409 });
     }
 
-    await deleteWhatsAppMessageForEveryone(instance, key, profile.clientId);
+    if (key && instance) {
+      await deleteWhatsAppMessageForEveryone(instance, key, profile.clientId);
+    }
 
     await service
       .from('message_attachments')
