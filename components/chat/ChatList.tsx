@@ -116,22 +116,22 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
     const second = ctx.createOscillator();
 
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(0.035, start + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.32);
+    gain.gain.exponentialRampToValueAtTime(0.14, start + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.42);
 
-    first.type = 'sine';
-    second.type = 'sine';
-    first.frequency.setValueAtTime(880, start);
-    second.frequency.setValueAtTime(1175, start + 0.11);
+    first.type = 'triangle';
+    second.type = 'triangle';
+    first.frequency.setValueAtTime(988, start);
+    second.frequency.setValueAtTime(1319, start + 0.12);
 
     first.connect(gain);
     second.connect(gain);
     gain.connect(ctx.destination);
 
     first.start(start);
-    first.stop(start + 0.12);
-    second.start(start + 0.13);
-    second.stop(start + 0.34);
+    first.stop(start + 0.15);
+    second.start(start + 0.15);
+    second.stop(start + 0.42);
   }
 
   function shouldNotifyIncoming(
