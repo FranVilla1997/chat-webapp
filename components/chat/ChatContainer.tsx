@@ -11,6 +11,7 @@ import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { LeadPanel } from './LeadPanel';
 import { BotPauseControl } from './BotPauseControl';
+import { SaleModal } from './SaleModal';
 import type { LeadInfo } from '@/lib/types';
 
 interface ChatContainerProps {
@@ -257,6 +258,8 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
   const [fileError, setFileError]       = useState<string | null>(null);
   const [stageUpdating, setStageUpdating] = useState(false);
   const [stageError, setStageError]       = useState<string | null>(null);
+  const [saleModalOpen, setSaleModalOpen] = useState(false);
+  const [saleNotice, setSaleNotice]       = useState<string | null>(null);
 
   async function handleSendAudio(base64: string, duration: number) {
     setAudioSending(true);
@@ -559,6 +562,27 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
             )}
             <style>{`@keyframes presupuestoPulse { 0%,100%{box-shadow:0 0 0 0 rgba(107,221,161,0)} 50%{box-shadow:0 0 0 6px rgba(107,221,161,0.25)} }`}</style>
             <BotPauseControl recordId={leadId} initialResumeAt={botResumeAt} onPause={pauseBot} onResume={resumeBot} busy={pauseBusy} />
+            <button
+              onClick={() => {
+                setSaleNotice(null);
+                setSaleModalOpen(true);
+              }}
+              style={{
+                marginLeft: 'auto',
+                padding: '7px 16px',
+                borderRadius: 5,
+                border: '1px solid rgba(24,93,232,0.45)',
+                background: 'rgba(24,93,232,0.14)',
+                color: '#8ab4ff',
+                fontSize: 11,
+                fontWeight: 800,
+                cursor: 'pointer',
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Venta
+            </button>
           </div>
 
           <div style={{
@@ -592,6 +616,12 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
             </div>
           )}
 
+          {saleNotice && (
+            <div style={{ padding: '8px 24px', background: 'rgba(53,229,138,0.07)', borderTop: '1px solid rgba(53,229,138,0.16)' }}>
+              <p style={{ fontSize: 11, color: '#6bdda1' }}>{saleNotice}</p>
+            </div>
+          )}
+
           <MessageInput
             onSend={sendMessage}
             onSendAudio={handleSendAudio}
@@ -610,6 +640,15 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
           />
         )}
       </div>
+      <SaleModal
+        open={saleModalOpen}
+        leadId={leadId}
+        clientId={clientId}
+        leadPhone={leadPhone}
+        leadInfo={enrichedLeadInfo}
+        onClose={() => setSaleModalOpen(false)}
+        onCreated={(saleId) => setSaleNotice(`Venta registrada en Airtable${saleId ? ` (${saleId})` : ''}.`)}
+      />
     </div>
   );
 }

@@ -10,6 +10,27 @@ export interface AirtableSource {
   tableId?: string;
 }
 
+export interface AirtableSeller {
+  id: string;
+  name: string;
+  active: boolean;
+}
+
+export interface CreateSaleInput {
+  leadRecordId: string;
+  sellerRecordId: string;
+  description: string;
+  amount: number;
+  purchaseDate: string;
+  paymentMethod: 'Transferencia' | 'Tarjeta' | 'Efectivo' | 'Cheque' | 'Otro';
+  status?: 'Confirmada' | 'Pendiente de pago' | 'Cancelada';
+  observations?: string;
+  receipt?: {
+    url: string;
+    filename: string;
+  };
+}
+
 function getBaseUrl(source?: AirtableSource): string {
   const baseId = source?.baseId || process.env.AIRTABLE_BASE_ID;
   const tableId = source?.tableId || process.env.AIRTABLE_LEADS_TABLE_ID;
@@ -19,6 +40,22 @@ function getBaseUrl(source?: AirtableSource): string {
   }
 
   return `https://api.airtable.com/v0/${baseId}/${tableId}`;
+}
+
+function getTableUrl(tableId: string): string {
+  const baseId = process.env.AIRTABLE_BASE_ID;
+  if (!baseId || !tableId) {
+    throw new Error('Missing Airtable base or table');
+  }
+  return `https://api.airtable.com/v0/${baseId}/${tableId}`;
+}
+
+function salesTableId(): string {
+  return process.env.AIRTABLE_SALES_TABLE_ID || 'tblS74HxfH5MHAga3';
+}
+
+function sellersTableId(): string {
+  return process.env.AIRTABLE_SELLERS_TABLE_ID || 'tblEcyyvFdnQYlTl6';
 }
 
 function extractUrl(v: unknown): string {
@@ -142,4 +179,62 @@ export async function updateLeadFields(recordId: string, fields: Record<string, 
     body: JSON.stringify({ fields }),
   });
   if (!res.ok) throw new Error(`Airtable error: ${res.status} ${await res.text()}`);
+}
+
+export async function getAirtableSellers(): Promise<AirtableSeller[]> {
+  const sellers: AirtableSeller[] = [];
+  let offset: string | undefined;
+  const baseUrl = getTableUrl(sellersTableId());
+
+  do {
+    let url = `${baseUrl}?pageSize=100&cellFormat=string&timeZone=America%2FArgentina%2FBuenos_Aires&userLocale=es`;
+    if (offset) url += `&offset=${offset}`;
+
+    const res = await fetch(url, { headers: HEADERS, cache: 'no-store' });
+    if (!res.ok) throw new Error(`Airtable sellers error: ${res.status} ${await res.text()}`);
+
+    const data = await res.json() as {
+      records: { id: string; fields: Record<string, unknown> }[];
+      offset?: string;
+    };
+
+    sellers.push(...data.records.map((record) => ({
+      id: record.id,
+      name: String(record.fields['Nombre'] ?? ''),
+      active: Boolean(record.fields['Activo']),
+    })).filter((seller) => seller.name));
+    offset = data.offset;
+  } while (offset);
+
+  return sellers.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function createSaleRecord(input: CreateSaleInput): Promise<{ id: string }> {
+  const fields: Record<string, unknown> = {
+    'Descripción': input.description,
+    'Lead cerrado': [input.leadRecordId],
+    'Vendedor responsable': [input.sellerRecordId],
+    'Monto de la venta': input.amount,
+    'Fecha de compra': input.purchaseDate,
+    'Método de pago': input.paymentMethod,
+    'Estado de la venta': input.status ?? 'Confirmada',
+  };
+
+  if (input.observations?.trim()) fields['Observaciones'] = input.observations.trim();
+  if (input.receipt) {
+    fields['Comprobante de pago'] = [{
+      url: input.receipt.url,
+      filename: input.receipt.filename,
+    }];
+  }
+
+  const res = await fetch(getTableUrl(salesTableId()), {
+    method: 'POST',
+    headers: HEADERS,
+    body: JSON.stringify({ fields }),
+  });
+
+  if (!res.ok) throw new Error(`Airtable sale error: ${res.status} ${await res.text()}`);
+  const data = await res.json() as { id: string };
+  return { id: data.id };
 }
