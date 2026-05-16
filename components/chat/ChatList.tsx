@@ -37,8 +37,9 @@ const NOTIFICATION_SOUNDS: { value: NotificationSound; label: string }[] = [
 
 const DEFAULT_SOUND_SETTINGS: NotificationSoundSettings = {
   sound: 'scala',
-  volume: 0.85,
+  volume: 1,
 };
+const NOTIFICATION_GAIN_BOOST = 3.4;
 
 /* ── Etapas del embudo ── */
 const FUNNEL: { key: string; label: string; color: string }[] = [
@@ -148,7 +149,10 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
       oscillator.type = type;
       oscillator.frequency.setValueAtTime(frequency, toneStart);
       gain.gain.setValueAtTime(0.0001, toneStart);
-      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * volume), toneStart + 0.012);
+      gain.gain.exponentialRampToValueAtTime(
+        Math.max(0.0001, Math.min(0.95, peak * volume * NOTIFICATION_GAIN_BOOST)),
+        toneStart + 0.012
+      );
       gain.gain.exponentialRampToValueAtTime(0.0001, toneStart + duration);
 
       oscillator.connect(gain);
