@@ -123,10 +123,16 @@ const msgText: React.CSSProperties = {
 };
 
 const roleLabel: React.CSSProperties = {
-  fontSize: 9,
+  fontSize: 10,
   fontWeight: 700,
   letterSpacing: '0.1em',
   textTransform: 'uppercase',
+  fontFamily: MONO,
+};
+
+const messageTime: React.CSSProperties = {
+  fontSize: 11,
+  color: '#404050',
   fontFamily: MONO,
 };
 
@@ -190,7 +196,7 @@ function MessageActions({
 
   if (editing) {
     return (
-      <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+      <div style={{ display: 'grid', gap: 6, width: '100%' }}>
         <textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
@@ -249,7 +255,7 @@ function MessageActions({
   }
 
   return (
-    <div style={{ display: 'inline-flex', gap: 8, marginTop: 4 }}>
+    <div style={{ display: 'inline-flex', gap: 9, alignItems: 'center' }}>
       <button
         onClick={() => setEditing(true)}
         disabled={busy}
@@ -258,7 +264,7 @@ function MessageActions({
           background: 'transparent',
           color: 'rgba(255,255,255,0.35)',
           padding: 0,
-          fontSize: 10,
+          fontSize: 11,
           cursor: busy ? 'not-allowed' : 'pointer',
         }}
       >
@@ -273,14 +279,46 @@ function MessageActions({
             background: 'transparent',
             color: 'rgba(248,113,113,0.55)',
             padding: 0,
-            fontSize: 10,
+            fontSize: 11,
             cursor: busy ? 'not-allowed' : 'pointer',
           }}
         >
           {busy ? 'Eliminando...' : 'Eliminar'}
         </button>
       )}
-      {error && <span style={{ fontSize: 10, color: '#f87171' }}>{error}</span>}
+      {error && <span style={{ fontSize: 11, color: '#f87171' }}>{error}</span>}
+    </div>
+  );
+}
+
+function MessageMetaRow({
+  align,
+  createdAt,
+  actions,
+}: {
+  align: 'left' | 'right';
+  createdAt: string;
+  actions?: React.ReactNode;
+}) {
+  const time = (
+    <span style={{ ...messageTime, paddingLeft: align === 'left' ? 2 : 0, paddingRight: align === 'right' ? 2 : 0 }}>
+      {formatTime(createdAt)}
+    </span>
+  );
+
+  if (align === 'right') {
+    return (
+      <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>{actions}</div>
+        {time}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+      {time}
+      <div style={{ minWidth: 0 }}>{actions}</div>
     </div>
   );
 }
@@ -333,11 +371,8 @@ export function MessageBubble({ message, isOptimistic, onEdit, onDelete }: Messa
             {was_audio && <AudioBadge />}
             <p style={{ ...msgText, color: '#e4e4e8' }}>{content}</p>
             <Attachments attachments={message.attachments} />
-            <MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={canDelete ? onDelete : undefined} />
           </div>
-          <span style={{ fontSize: 10, color: '#404050', paddingLeft: 2, fontFamily: MONO }}>
-            {formatTime(created_at)}
-          </span>
+          <MessageMetaRow align="left" createdAt={created_at} />
         </div>
       </div>
     );
@@ -357,11 +392,12 @@ export function MessageBubble({ message, isOptimistic, onEdit, onDelete }: Messa
             {was_audio && <AudioBadge />}
             <p style={{ ...msgText, color: '#fff' }}>{content}</p>
             <Attachments attachments={message.attachments} />
-            <MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={canDelete ? onDelete : undefined} />
           </div>
-          <span style={{ fontSize: 10, color: '#404050', paddingRight: 2, fontFamily: MONO }}>
-            {formatTime(created_at)}
-          </span>
+          <MessageMetaRow
+            align="right"
+            createdAt={created_at}
+            actions={<MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={canDelete ? onDelete : undefined} />}
+          />
         </div>
       </div>
     );
@@ -381,11 +417,12 @@ export function MessageBubble({ message, isOptimistic, onEdit, onDelete }: Messa
           {was_audio && <AudioBadge />}
           <p style={{ ...msgText, color: '#e4e4e8' }}>{content}</p>
           <Attachments attachments={message.attachments} />
-          <MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={canDelete ? onDelete : undefined} />
         </div>
-        <span style={{ fontSize: 10, color: '#404050', paddingRight: 2, fontFamily: MONO }}>
-          {formatTime(created_at)}
-        </span>
+        <MessageMetaRow
+          align="right"
+          createdAt={created_at}
+          actions={<MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={canDelete ? onDelete : undefined} />}
+        />
       </div>
     </div>
   );
