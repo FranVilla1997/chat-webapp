@@ -32,6 +32,7 @@ const supabaseBrowser = createClient(
 type SentinelEvent = {
   id: string;
   title: string;
+  summary: string;
   body: string;
   createdAt: string;
 };
@@ -264,6 +265,12 @@ function normalizeStageLabel(value?: string) {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function compactValue(value: string, maxLength = 44) {
+  const clean = value.replace(/\s+/g, ' ').trim();
+  if (clean.length <= maxLength) return clean;
+  return `${clean.slice(0, maxLength - 1).trim()}…`;
+}
+
 function deriveSentinelEvents(leadInfo?: LeadInfo): SentinelEvent[] {
   if (!leadInfo) return [];
 
@@ -273,9 +280,12 @@ function deriveSentinelEvents(leadInfo?: LeadInfo): SentinelEvent[] {
     .slice(0, 6);
 
   if (collected.length) {
+    const first = collected[0];
+    const extra = collected.length > 1 ? ` +${collected.length - 1}` : '';
     events.push({
       id: `sentinel-info-${collected.map((field) => `${field.label}:${field.value}`).join('|')}`,
       title: 'Información recabada',
+      summary: `${first.label}: ${compactValue(first.value)}${extra}`,
       body: collected.map((field) => `${field.label}: ${field.value}`).join('\n'),
       createdAt: sentinelEventDate(leadInfo.stageChangedAt, leadInfo.qualifiedAt),
     });
@@ -285,6 +295,7 @@ function deriveSentinelEvents(leadInfo?: LeadInfo): SentinelEvent[] {
     events.push({
       id: `sentinel-stage-${leadInfo.stage}-${leadInfo.stageChangedAt ?? ''}`,
       title: 'Etapa actualizada',
+      summary: normalizeStageLabel(leadInfo.stage),
       body: `El lead quedó en ${normalizeStageLabel(leadInfo.stage)}.`,
       createdAt: sentinelEventDate(leadInfo.stageChangedAt, leadInfo.qualifiedAt),
     });
@@ -294,6 +305,7 @@ function deriveSentinelEvents(leadInfo?: LeadInfo): SentinelEvent[] {
     events.push({
       id: `sentinel-score-${leadInfo.score ?? ''}-${leadInfo.qualificationReason ?? ''}`,
       title: 'Calificación actualizada',
+      summary: leadInfo.score ? `${leadInfo.score} pts` : compactValue(leadInfo.qualificationReason ?? ''),
       body: [
         leadInfo.score ? `Score: ${leadInfo.score} pts` : '',
         leadInfo.qualificationReason ? `Motivo: ${leadInfo.qualificationReason}` : '',
@@ -306,6 +318,7 @@ function deriveSentinelEvents(leadInfo?: LeadInfo): SentinelEvent[] {
     events.push({
       id: `sentinel-proposal-${leadInfo.proposalSentAt ?? ''}-${leadInfo.proposalAmount ?? ''}`,
       title: 'Propuesta registrada',
+      summary: leadInfo.proposalAmount ? compactValue(leadInfo.proposalAmount) : 'Propuesta enviada',
       body: leadInfo.proposalAmount ? `Monto propuesto: ${leadInfo.proposalAmount}` : 'El Sentinel registró una propuesta enviada.',
       createdAt: sentinelEventDate(leadInfo.proposalSentAt, leadInfo.stageChangedAt),
     });
@@ -320,27 +333,52 @@ function timelineTime(item: ChatTimelineItem) {
 }
 
 function SentinelEventCard({ event }: { event: SentinelEvent }) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
     <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
-      <div style={{
-        maxWidth: '78%',
-        background: 'linear-gradient(135deg, rgba(107,221,161,0.08), rgba(24,93,232,0.05))',
-        border: '1px solid rgba(107,221,161,0.16)',
-        borderLeft: '3px solid #6bdda1',
-        borderRadius: 7,
-        padding: '9px 12px',
-        color: '#d7d7de',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#6bdda1', boxShadow: '0 0 10px rgba(107,221,161,0.5)' }} />
-          <span style={{ color: '#6bdda1', fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+      <button
+        type="button"
+        onClick={() => setExpanded((current) => !current)}
+        style={{
+          maxWidth: '78%',
+          border: '1px solid rgba(255,255,255,0.08)',
+          background: expanded ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.035)',
+          color: '#a8a8b3',
+          borderRadius: 999,
+          padding: expanded ? '8px 12px' : '5px 11px',
+          cursor: 'pointer',
+          textAlign: 'left',
+          transition: 'background 0.15s, border-color 0.15s',
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#71717f', flexShrink: 0 }} />
+          <span style={{ color: '#c8c8d0', fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
             {event.title}
           </span>
-        </div>
-        <p style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 12, lineHeight: 1.55 }}>
-          {event.body}
-        </p>
-      </div>
+          <span style={{ color: '#71717f', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            - {event.summary}
+          </span>
+          <span style={{ color: '#71717f', fontSize: 11, marginLeft: 2, flexShrink: 0 }}>
+            {expanded ? '−' : '+'}
+          </span>
+        </span>
+        {expanded && (
+          <span style={{
+            display: 'block',
+            marginTop: 7,
+            paddingTop: 7,
+            borderTop: '1px solid rgba(255,255,255,0.07)',
+            whiteSpace: 'pre-wrap',
+            color: '#d0d0d8',
+            fontSize: 12,
+            lineHeight: 1.55,
+          }}>
+            {event.body}
+          </span>
+        )}
+      </button>
     </div>
   );
 }
