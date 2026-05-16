@@ -15,12 +15,14 @@ export async function POST(req: NextRequest) {
     message?: string;
     event_type?: string;
     stage?: string;
+    actor?: string;
+    reason?: string;
     field_label?: string;
     field_value?: string;
   };
   const { record_id, action = 'created' } = body;
 
-  // Airtable linked record fields come as ["recXXX"] — normalize to plain string
+  // Airtable linked record fields come as ["recXXX"] - normalize to plain string
   let client_id: string | undefined;
   if (Array.isArray(body.client_id)) {
     client_id = body.client_id[0] as string;
@@ -72,18 +74,50 @@ function buildEventMessage(body: {
   action?: string;
   event_type?: string;
   stage?: string;
+  actor?: string;
+  reason?: string;
   field_label?: string;
   field_value?: string;
 }) {
   const action = body.event_type || body.action;
+  const actor = body.actor === 'humano' ? 'humano' : 'sentinel';
   if (action === 'stage_updated' && body.stage) {
-    return `Etapa actualizada: ${body.stage}`;
+    return JSON.stringify({
+      type: 'stage_updated',
+      category: 'stage',
+      title: 'Etapa actualizada',
+      summary: body.stage,
+      body: `El lead quedo en ${body.stage}.`,
+      actor,
+      reason: body.reason || (actor === 'sentinel'
+        ? 'El Sentinel cambio la etapa segun el avance detectado en la conversacion.'
+        : 'Cambio manual registrado desde una herramienta conectada.'),
+      createdAt: new Date().toISOString(),
+    });
   }
   if (action === 'data_collected' && body.field_label && body.field_value) {
-    return `Información recabada: ${body.field_label}: ${body.field_value}`;
+    return JSON.stringify({
+      type: 'data_collected',
+      category: 'info',
+      title: 'Informacion recabada',
+      summary: `${body.field_label}: ${body.field_value}`,
+      body: `${body.field_label}: ${body.field_value}`,
+      actor,
+      reason: body.reason || 'El Sentinel detecto y guardo esta informacion desde la conversacion.',
+      createdAt: new Date().toISOString(),
+    });
   }
   if (action === 'qualified') {
-    return 'Lead calificado por Sentinel.';
+    return JSON.stringify({
+      type: 'qualified',
+      category: 'score',
+      title: 'Calificacion actualizada',
+      summary: 'Lead calificado',
+      body: 'Lead calificado por Sentinel.',
+      actor,
+      reason: body.reason || 'El Sentinel califico el lead segun las reglas comerciales configuradas.',
+      createdAt: new Date().toISOString(),
+    });
   }
   return '';
 }

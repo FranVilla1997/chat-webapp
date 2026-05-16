@@ -31,10 +31,13 @@ const supabaseBrowser = createClient(
 
 type SentinelEvent = {
   id: string;
+  category: 'info' | 'stage' | 'score' | 'proposal' | 'system';
   title: string;
   summary: string;
   body: string;
   createdAt: string;
+  actor: 'sentinel' | 'humano' | 'sistema';
+  reason?: string;
 };
 
 type ChatTimelineItem =
@@ -44,10 +47,10 @@ type ChatTimelineItem =
 function friendlySendError(error: string) {
   const lower = error.toLowerCase();
   if (lower.includes('evolution') || lower.includes('unauthorized') || lower.includes('401') || lower.includes('whatsapp')) {
-    return 'No se pudo enviar el mensaje por un error de conexión con WhatsApp. Revisá que la instancia del lead tenga su API key correcta.';
+    return 'No se pudo enviar el mensaje por un error de conexion con WhatsApp. Revisa que la instancia del lead tenga su API key correcta.';
   }
-  if (lower.includes('audio')) return 'No se pudo enviar el audio. Revisá la conexión e intentá nuevamente.';
-  if (lower.includes('archivo') || lower.includes('media')) return 'No se pudo enviar el archivo. Revisá la conexión e intentá nuevamente.';
+  if (lower.includes('audio')) return 'No se pudo enviar el audio. Revisa la conexion e intenta nuevamente.';
+  if (lower.includes('archivo') || lower.includes('media')) return 'No se pudo enviar el archivo. Revisa la conexion e intenta nuevamente.';
   return error;
 }
 
@@ -65,7 +68,7 @@ type QuoteUrlItem = {
 function parseMeasurements(value?: string): { width?: string; height?: string } {
   if (!value) return {};
   const normalized = value.replace(',', '.');
-  const directMatch = normalized.match(/(\d+(?:\.\d+)?)\s*(?:cm|m)?\s*(?:x|×|por)\s*(\d+(?:\.\d+)?)/i);
+  const directMatch = normalized.match(/(\d+(?:\.\d+)?)\s*(?:cm|m)?\s*(?:x|\u00d7|por)\s*(\d+(?:\.\d+)?)/i);
   if (directMatch) return { width: directMatch[1], height: directMatch[2] };
 
   const widthMatch = normalized.match(/(?:ancho|width)\D*(\d+(?:\.\d+)?)/i);
@@ -90,7 +93,7 @@ function inferMeasureUnit(value: string, explicitUnit?: string): 'cm' | 'm' {
 
 function parseLeadMeasurements(value?: string): { width?: string; height?: string; widthUnit?: 'cm' | 'm'; heightUnit?: 'cm' | 'm' } {
   if (!value) return {};
-  const normalized = value.replace(/×|Ã—/g, 'x');
+  const normalized = value.replace(/\u00d7/g, 'x');
   const directMatch = normalized.match(/(\d+(?:[.,]\d+)?)\s*(cm|m|mts?|metros?)?\s*(?:ancho|width)?\s*(?:x|por)\s*(\d+(?:[.,]\d+)?)\s*(cm|m|mts?|metros?)?\s*(?:alto|height)?/i);
   if (directMatch) {
     return {
@@ -185,7 +188,7 @@ function rollerProductFromText(value?: string): string | undefined {
 function parseMeasurementItems(measurementsInfo?: string, productType?: string): QuoteUrlItem[] {
   if (!measurementsInfo) return [];
 
-  const normalized = measurementsInfo.replace(/×/g, 'x').replace(/,/g, '.');
+  const normalized = measurementsInfo.replace(/\u00d7/g, 'x').replace(/,/g, '.');
   const labelPattern = /(sistema\s+doble|solo\s+sunscreen|sunscreen|blackout|black\s*out|zebra|eclipse|bandas?|cortinado|cortina)\s*:/gi;
   const labels = [...normalized.matchAll(labelPattern)];
   const chunks = labels.length
@@ -265,10 +268,21 @@ function normalizeStageLabel(value?: string) {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function formatEventTime(value: string) {
+  if (!isValidDate(value)) return '';
+  return new Date(value).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function actorLabel(actor: SentinelEvent['actor']) {
+  if (actor === 'humano') return 'Humano';
+  if (actor === 'sistema') return 'Sistema';
+  return 'Sentinel';
+}
+
 function compactValue(value: string, maxLength = 44) {
   const clean = value.replace(/\s+/g, ' ').trim();
   if (clean.length <= maxLength) return clean;
-  return `${clean.slice(0, maxLength - 1).trim()}…`;
+  return `${clean.slice(0, maxLength - 1).trim()}...`;
 }
 
 function deriveSentinelEvents(leadInfo?: LeadInfo): SentinelEvent[] {
@@ -284,49 +298,125 @@ function deriveSentinelEvents(leadInfo?: LeadInfo): SentinelEvent[] {
     const extra = collected.length > 1 ? ` +${collected.length - 1}` : '';
     events.push({
       id: `sentinel-info-${collected.map((field) => `${field.label}:${field.value}`).join('|')}`,
-      title: 'Información recabada',
+      category: 'info',
+      title: 'Informacion recabada',
       summary: `${first.label}: ${compactValue(first.value)}${extra}`,
       body: collected.map((field) => `${field.label}: ${field.value}`).join('\n'),
       createdAt: sentinelEventDate(leadInfo.stageChangedAt, leadInfo.qualifiedAt),
+      actor: 'sentinel',
+      reason: 'El Sentinel detecto datos utiles en la conversacion y los guardo en la ficha del lead.',
     });
   }
 
   if (leadInfo.stage) {
     events.push({
       id: `sentinel-stage-${leadInfo.stage}-${leadInfo.stageChangedAt ?? ''}`,
+      category: 'stage',
       title: 'Etapa actualizada',
       summary: normalizeStageLabel(leadInfo.stage),
-      body: `El lead quedó en ${normalizeStageLabel(leadInfo.stage)}.`,
+      body: `El lead quedo en ${normalizeStageLabel(leadInfo.stage)}.`,
       createdAt: sentinelEventDate(leadInfo.stageChangedAt, leadInfo.qualifiedAt),
+      actor: 'sentinel',
+      reason: leadInfo.qualificationReason
+        ? `El Sentinel cambio la etapa por este motivo: ${leadInfo.qualificationReason}`
+        : 'El Sentinel cambio la etapa segun el avance comercial detectado en la conversacion.',
     });
   }
 
   if (leadInfo.score || leadInfo.qualificationReason) {
     events.push({
       id: `sentinel-score-${leadInfo.score ?? ''}-${leadInfo.qualificationReason ?? ''}`,
-      title: 'Calificación actualizada',
+      category: 'score',
+      title: 'Calificacion actualizada',
       summary: leadInfo.score ? `${leadInfo.score} pts` : compactValue(leadInfo.qualificationReason ?? ''),
       body: [
         leadInfo.score ? `Score: ${leadInfo.score} pts` : '',
         leadInfo.qualificationReason ? `Motivo: ${leadInfo.qualificationReason}` : '',
       ].filter(Boolean).join('\n'),
       createdAt: sentinelEventDate(leadInfo.qualifiedAt, leadInfo.stageChangedAt),
+      actor: 'sentinel',
+      reason: leadInfo.qualificationReason || 'El Sentinel recalculo la calificacion con la informacion disponible del lead.',
     });
   }
 
   if (leadInfo.proposalSentAt || leadInfo.proposalAmount) {
     events.push({
       id: `sentinel-proposal-${leadInfo.proposalSentAt ?? ''}-${leadInfo.proposalAmount ?? ''}`,
+      category: 'proposal',
       title: 'Propuesta registrada',
       summary: leadInfo.proposalAmount ? compactValue(leadInfo.proposalAmount) : 'Propuesta enviada',
-      body: leadInfo.proposalAmount ? `Monto propuesto: ${leadInfo.proposalAmount}` : 'El Sentinel registró una propuesta enviada.',
+      body: leadInfo.proposalAmount ? `Monto propuesto: ${leadInfo.proposalAmount}` : 'El Sentinel registro una propuesta enviada.',
       createdAt: sentinelEventDate(leadInfo.proposalSentAt, leadInfo.stageChangedAt),
+      actor: 'sentinel',
+      reason: 'El Sentinel detecto o recibio confirmacion de una propuesta enviada al lead.',
     });
   }
 
   return events;
 }
 
+function parseSystemMessageAsEvent(message: Message): SentinelEvent {
+  const fallback: SentinelEvent = {
+    id: `system-${message.id}`,
+    category: 'system',
+    title: 'Actividad registrada',
+    summary: compactValue(message.content),
+    body: message.content,
+    createdAt: message.created_at,
+    actor: 'sentinel',
+    reason: 'Evento registrado automaticamente por el flujo del Sentinel.',
+  };
+
+  try {
+    const parsed = JSON.parse(message.content) as Partial<SentinelEvent> & { type?: string };
+    return {
+      ...fallback,
+      category: parsed.category ?? (parsed.type === 'stage_updated' ? 'stage' : fallback.category),
+      title: parsed.title ?? fallback.title,
+      summary: parsed.summary ?? fallback.summary,
+      body: parsed.body ?? fallback.body,
+      actor: parsed.actor ?? fallback.actor,
+      reason: parsed.reason ?? fallback.reason,
+    };
+  } catch {
+    const [titlePart, ...detailParts] = message.content.split(':');
+    const detail = detailParts.join(':').trim();
+    const lower = titlePart.toLowerCase();
+    if (lower.includes('etapa actualizada')) {
+      return {
+        ...fallback,
+        category: 'stage',
+        title: 'Etapa actualizada',
+        summary: normalizeStageLabel(detail),
+        body: detail ? `El lead quedo en ${normalizeStageLabel(detail)}.` : message.content,
+        actor: 'sentinel',
+        reason: 'El Sentinel actualizo la etapa desde la automatizacion comercial.',
+      };
+    }
+    if (lower.includes('informaci')) {
+      return {
+        ...fallback,
+        category: 'info',
+        title: 'Informacion recabada',
+        summary: compactValue(detail || message.content),
+        body: detail || message.content,
+        actor: 'sentinel',
+        reason: 'El Sentinel guardo informacion detectada durante la conversacion.',
+      };
+    }
+    if (lower.includes('lead calificado') || lower.includes('calificaci')) {
+      return {
+        ...fallback,
+        category: 'score',
+        title: 'Calificacion actualizada',
+        summary: 'Lead calificado',
+        actor: 'sentinel',
+        reason: 'El Sentinel marco el lead como calificado segun las reglas de scoring.',
+      };
+    }
+    return fallback;
+  }
+}
 function timelineTime(item: ChatTimelineItem) {
   const value = item.kind === 'message' ? item.message.created_at : item.event.createdAt;
   return new Date(value).getTime();
@@ -334,6 +424,8 @@ function timelineTime(item: ChatTimelineItem) {
 
 function SentinelEventCard({ event }: { event: SentinelEvent }) {
   const [expanded, setExpanded] = useState(false);
+  const time = formatEventTime(event.createdAt);
+  const actor = actorLabel(event.actor);
 
   return (
     <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
@@ -353,24 +445,38 @@ function SentinelEventCard({ event }: { event: SentinelEvent }) {
           transition: 'background 0.15s, border-color 0.15s',
         }}
       >
-        <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, maxWidth: '100%' }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#71717f', flexShrink: 0 }} />
-          <span style={{ color: '#c8c8d0', fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
-            {event.title}
+        <span style={{ display: 'grid', gap: 4, minWidth: 0, maxWidth: '100%' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#71717f', flexShrink: 0 }} />
+            <span style={{ color: '#c8c8d0', fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+              {event.title}
+            </span>
+            <span style={{
+              color: '#71717f',
+              fontSize: 11,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              minWidth: 0,
+              maxWidth: 145,
+            }}>
+              - {event.summary}
+            </span>
+            <span style={{ color: '#71717f', fontSize: 11, marginLeft: 'auto', flexShrink: 0 }}>
+              {expanded ? '-' : '+'}
+            </span>
           </span>
           <span style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 8,
+            paddingLeft: 13,
             color: '#71717f',
-            fontSize: 11,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            minWidth: 0,
-            maxWidth: 170,
+            fontSize: 10,
+            letterSpacing: '0.02em',
           }}>
-            - {event.summary}
-          </span>
-          <span style={{ color: '#71717f', fontSize: 11, marginLeft: 2, flexShrink: 0 }}>
-            {expanded ? '−' : '+'}
+            <span>{actor}</span>
+            {time && <span>{time}</span>}
           </span>
         </span>
         {expanded && (
@@ -385,14 +491,21 @@ function SentinelEventCard({ event }: { event: SentinelEvent }) {
             lineHeight: 1.55,
             maxWidth: 440,
           }}>
+            <span style={{ display: 'block', marginBottom: 8, color: '#a8a8b3', fontSize: 11 }}>
+              Actor: {actor}{time ? ` - Hora: ${time}` : ''}
+            </span>
             {event.body}
+            {event.actor === 'sentinel' && event.reason && (
+              <span style={{ display: 'block', marginTop: 8, color: '#a8a8b3' }}>
+                Justificacion: {event.reason}
+              </span>
+            )}
           </span>
         )}
       </button>
     </div>
   );
 }
-
 export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo, showBack }: ChatContainerProps) {
   const router = useRouter();
   const {
@@ -547,12 +660,20 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
     enrichedLeadInfo?.stage,
     enrichedLeadInfo?.stageChangedAt,
   ]);
+  const systemEvents = useMemo(() => messages
+    .filter((message) => message.role === 'system')
+    .map(parseSystemMessageAsEvent), [messages]);
+  const visibleSentinelEvents = useMemo(() => {
+    const covered = new Set(systemEvents.map((event) => event.category));
+    return sentinelEvents.filter((event) => !covered.has(event.category));
+  }, [sentinelEvents, systemEvents]);
   const timeline = useMemo<ChatTimelineItem[]>(() => {
     return [
-      ...sentinelEvents.map((event) => ({ kind: 'event' as const, event })),
-      ...messages.map((message) => ({ kind: 'message' as const, message })),
+      ...visibleSentinelEvents.map((event) => ({ kind: 'event' as const, event })),
+      ...systemEvents.map((event) => ({ kind: 'event' as const, event })),
+      ...messages.filter((message) => message.role !== 'system').map((message) => ({ kind: 'message' as const, message })),
     ].sort((a, b) => timelineTime(a) - timelineTime(b));
-  }, [messages, sentinelEvents]);
+  }, [messages, systemEvents, visibleSentinelEvents]);
   const lastTimelineKey = useMemo(() => {
     const last = timeline.at(-1);
     if (!last) return 'empty';
@@ -624,7 +745,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
     const response = await fetch('/api/update-lead-stage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recordId: leadId, stageId }),
+      body: JSON.stringify({ recordId: leadId, stageId, clientId }),
     });
     const result = await response.json().catch(() => ({})) as {
       error?: string;
@@ -695,7 +816,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
           ))}
         </div>
         <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-          Cargando conversación
+          Cargando conversacion
         </p>
         <style>{`@keyframes barPulse { 0%,100%{opacity:.3;transform:scaleY(.7)} 50%{opacity:1;transform:scaleY(1)} }`}</style>
       </div>
@@ -761,7 +882,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
                   opacity: stageUpdating ? 0.6 : 1,
                 }}
               >
-                {stageUpdating ? 'Abriendo…' : 'Presupuestar'}
+                {stageUpdating ? 'Abriendo...' : 'Presupuestar'}
               </button>
             )}
 
@@ -818,7 +939,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
             {timeline.length === 0 ? (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.03em' }}>
-                  Sin mensajes aún
+                  Sin mensajes aun
                 </p>
               </div>
             ) : (
