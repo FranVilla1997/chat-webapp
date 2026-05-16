@@ -514,7 +514,11 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
 
   const { followups } = useFollowups(leadId, clientId);
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
+  const previousLeadIdRef = useRef(leadId);
+  const previousTimelineKeyRef = useRef('');
   const [panelOpen, setPanelOpen] = useState(true);
   const [presupuestoEnviado, setPresupuestoEnviado] = useState(false);
   const [botResumeAt, setBotResumeAt] = useState(leadInfo?.botResumeAt ?? '');
@@ -549,6 +553,11 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
       ...messages.map((message) => ({ kind: 'message' as const, message })),
     ].sort((a, b) => timelineTime(a) - timelineTime(b));
   }, [messages, sentinelEvents]);
+  const lastTimelineKey = useMemo(() => {
+    const last = timeline.at(-1);
+    if (!last) return 'empty';
+    return last.kind === 'message' ? `message-${last.message.id}` : `event-${last.event.id}`;
+  }, [timeline]);
 
   useEffect(() => {
     setCurrentStage(leadInfo?.stage ?? '');
@@ -651,9 +660,27 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
     deleteLocalMessage(messageId);
   }
 
+  function handleTimelineScroll() {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isNearBottomRef.current = distanceFromBottom < 160;
+  }
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [timeline]);
+    const leadChanged = previousLeadIdRef.current !== leadId;
+    const timelineChanged = previousTimelineKeyRef.current !== lastTimelineKey;
+
+    if (leadChanged) {
+      isNearBottomRef.current = true;
+      requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'auto' }));
+    } else if (timelineChanged && isNearBottomRef.current) {
+      requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }));
+    }
+
+    previousLeadIdRef.current = leadId;
+    previousTimelineKeyRef.current = lastTimelineKey;
+  }, [leadId, lastTimelineKey]);
 
   if (loading) {
     return (
@@ -784,7 +811,10 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
             flex: 1, overflowY: 'auto',
             padding: '24px 24px 8px',
             display: 'flex', flexDirection: 'column', gap: 12,
-          }}>
+          }}
+            ref={scrollContainerRef}
+            onScroll={handleTimelineScroll}
+          >
             {timeline.length === 0 ? (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.03em' }}>
