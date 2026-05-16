@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server';
-import { createSaleRecord, updateLeadFields } from '@/lib/airtable';
+import { createSaleRecord, getPipelineStages, updateLeadFields, updateLeadStage } from '@/lib/airtable';
 
 const ATTACHMENTS_BUCKET = 'chat-attachments';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
@@ -103,15 +103,27 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    const warnings: string[] = [];
     try {
       await updateLeadFields(leadId, {
         won_amount: String(amount),
       });
     } catch (err) {
       console.error('Lead won_amount update failed:', err);
+      warnings.push('No se pudo actualizar el monto ganado del lead.');
     }
 
-    return NextResponse.json({ ok: true, saleId: sale.id });
+    try {
+      const stages = await getPipelineStages();
+      const wonStage = stages.find((stage) => stage.name === 'cerrado_ganado');
+      if (!wonStage) throw new Error('No se encontró la etapa cerrado_ganado.');
+      await updateLeadStage(leadId, wonStage.id);
+    } catch (err) {
+      console.error('Lead won stage update failed:', err);
+      warnings.push('No se pudo mover el lead a cerrado_ganado.');
+    }
+
+    return NextResponse.json({ ok: true, saleId: sale.id, warnings });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Internal server error';
     return NextResponse.json({ error: message }, { status: 500 });

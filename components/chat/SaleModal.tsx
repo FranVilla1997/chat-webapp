@@ -16,7 +16,7 @@ interface SaleModalProps {
   leadPhone: string;
   leadInfo?: LeadInfo;
   onClose: () => void;
-  onCreated?: (saleId: string) => void;
+  onCreated?: (saleId: string, warnings?: string[]) => void;
 }
 
 function todayInputValue() {
@@ -103,9 +103,9 @@ export function SaleModal({ open, leadId, clientId, leadPhone, leadInfo, onClose
         method: 'POST',
         body: form,
       });
-      const result = await response.json().catch(() => ({})) as { error?: string; saleId?: string };
+      const result = await response.json().catch(() => ({})) as { error?: string; saleId?: string; warnings?: string[] };
       if (!response.ok) throw new Error(result.error ?? 'No se pudo registrar la venta.');
-      onCreated?.(result.saleId ?? '');
+      onCreated?.(result.saleId ?? '', result.warnings);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo registrar la venta.');

@@ -797,7 +797,14 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
         leadPhone={leadPhone}
         leadInfo={enrichedLeadInfo}
         onClose={() => setSaleModalOpen(false)}
-        onCreated={(saleId) => setSaleNotice(`Venta registrada en Airtable${saleId ? ` (${saleId})` : ''}.`)}
+        onCreated={(saleId, warnings) => {
+          setCurrentStage('cerrado_ganado');
+          setSaleNotice(
+            `Venta registrada en Airtable${saleId ? ` (${saleId})` : ''}. Lead marcado como cerrado ganado.${
+              warnings?.length ? ` ${warnings.join(' ')}` : ''
+            }`
+          );
+        }}
       />
     </div>
   );
