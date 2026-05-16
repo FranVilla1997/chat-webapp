@@ -341,15 +341,16 @@ function SentinelEventCard({ event }: { event: SentinelEvent }) {
         type="button"
         onClick={() => setExpanded((current) => !current)}
         style={{
+          width: 280,
           maxWidth: '78%',
           border: '1px solid rgba(255,255,255,0.08)',
           background: expanded ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.035)',
           color: '#a8a8b3',
-          borderRadius: expanded ? 10 : 999,
-          padding: expanded ? '10px 12px' : '5px 11px',
+          borderRadius: 10,
+          padding: '8px 12px',
           cursor: 'pointer',
           textAlign: 'left',
-          transition: 'background 0.15s, border-color 0.15s, border-radius 0.15s',
+          transition: 'background 0.15s, border-color 0.15s',
         }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, maxWidth: '100%' }}>
@@ -364,7 +365,7 @@ function SentinelEventCard({ event }: { event: SentinelEvent }) {
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             minWidth: 0,
-            maxWidth: expanded ? 220 : 320,
+            maxWidth: 170,
           }}>
             - {event.summary}
           </span>
