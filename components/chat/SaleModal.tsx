@@ -58,7 +58,11 @@ export function SaleModal({ open, leadId, clientId, leadPhone, leadInfo, onClose
   useEffect(() => {
     if (!open) return;
     setDescription(defaultDescription(leadInfo));
+    setAmount('');
     setPurchaseDate(todayInputValue());
+    setPaymentMethod('Transferencia');
+    setStatus('Confirmada');
+    setObservations('');
     setError(null);
     setReceipt(null);
     setLoadingOptions(true);
@@ -72,7 +76,9 @@ export function SaleModal({ open, leadId, clientId, leadPhone, leadInfo, onClose
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'No se pudieron cargar los vendedores.'))
       .finally(() => setLoadingOptions(false));
-  }, [leadInfo, open]);
+    // Deliberadamente no dependemos del objeto completo leadInfo: ChatContainer lo
+    // recrea con frecuencia y eso limpiaba el archivo seleccionado.
+  }, [leadId, open]);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
