@@ -19,6 +19,26 @@ interface ChatListProps {
 }
 
 const MONO = `'SF Mono', 'Consolas', 'Liberation Mono', monospace`;
+const NOTIFICATION_SETTINGS_KEY = 'scala_notification_sound_settings';
+
+type NotificationSound = 'scala' | 'ping' | 'bell' | 'soft';
+
+type NotificationSoundSettings = {
+  sound: NotificationSound;
+  volume: number;
+};
+
+const NOTIFICATION_SOUNDS: { value: NotificationSound; label: string }[] = [
+  { value: 'scala', label: 'SCALA' },
+  { value: 'ping', label: 'Ping' },
+  { value: 'bell', label: 'Campana' },
+  { value: 'soft', label: 'Suave' },
+];
+
+const DEFAULT_SOUND_SETTINGS: NotificationSoundSettings = {
+  sound: 'scala',
+  volume: 0.85,
+};
 
 /* ── Etapas del embudo ── */
 const FUNNEL: { key: string; label: string; color: string }[] = [
@@ -79,6 +99,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [search, setSearch] = useState('');
   const [loggingOut, setLoggingOut] = useState(false);
+  const [soundSettings, setSoundSettings] = useState<NotificationSoundSettings>(DEFAULT_SOUND_SETTINGS);
   const leadsRef = useRef(leads);
   leadsRef.current = leads;
   const selectedLeadRef = useRef(selectedLead);
@@ -102,36 +123,60 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
     return audioContextRef.current;
   }
 
-  function playNotificationSound() {
+  function playNotificationSound(force = false) {
     const now = Date.now();
-    if (now - lastSoundAtRef.current < 900) return;
+    if (!force && now - lastSoundAtRef.current < 900) return;
 
     const ctx = getAudioContext();
     if (!ctx || ctx.state !== 'running') return;
 
     lastSoundAtRef.current = now;
     const start = ctx.currentTime;
-    const gain = ctx.createGain();
-    const first = ctx.createOscillator();
-    const second = ctx.createOscillator();
+    const volume = Math.max(0, Math.min(soundSettings.volume, 1));
 
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(0.14, start + 0.012);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.42);
+    const playTone = (
+      offset: number,
+      duration: number,
+      frequency: number,
+      peak: number,
+      type: OscillatorType = 'triangle'
+    ) => {
+      const toneStart = start + offset;
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
 
-    first.type = 'triangle';
-    second.type = 'triangle';
-    first.frequency.setValueAtTime(988, start);
-    second.frequency.setValueAtTime(1319, start + 0.12);
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, toneStart);
+      gain.gain.setValueAtTime(0.0001, toneStart);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * volume), toneStart + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, toneStart + duration);
 
-    first.connect(gain);
-    second.connect(gain);
-    gain.connect(ctx.destination);
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start(toneStart);
+      oscillator.stop(toneStart + duration + 0.03);
+    };
 
-    first.start(start);
-    first.stop(start + 0.15);
-    second.start(start + 0.15);
-    second.stop(start + 0.42);
+    if (soundSettings.sound === 'ping') {
+      playTone(0, 0.22, 1568, 0.22, 'sine');
+      return;
+    }
+
+    if (soundSettings.sound === 'bell') {
+      playTone(0, 0.34, 784, 0.16, 'triangle');
+      playTone(0.08, 0.42, 1175, 0.11, 'sine');
+      playTone(0.18, 0.42, 1568, 0.08, 'sine');
+      return;
+    }
+
+    if (soundSettings.sound === 'soft') {
+      playTone(0, 0.28, 740, 0.10, 'sine');
+      playTone(0.16, 0.32, 988, 0.08, 'sine');
+      return;
+    }
+
+    playTone(0, 0.15, 988, 0.17, 'triangle');
+    playTone(0.15, 0.27, 1319, 0.15, 'triangle');
   }
 
   function shouldNotifyIncoming(
@@ -213,7 +258,27 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
       const stored = JSON.parse(localStorage.getItem('scala_seen_leads') ?? '{}');
       setSeenAt(stored);
     } catch { /* empty */ }
+
+    try {
+      const storedSettings = JSON.parse(localStorage.getItem(NOTIFICATION_SETTINGS_KEY) ?? 'null') as Partial<NotificationSoundSettings> | null;
+      const storedSound = storedSettings?.sound;
+      if (
+        storedSettings &&
+        storedSound &&
+        NOTIFICATION_SOUNDS.some((sound) => sound.value === storedSound) &&
+        typeof storedSettings.volume === 'number'
+      ) {
+        setSoundSettings({
+          sound: storedSound,
+          volume: Math.max(0, Math.min(storedSettings.volume, 1)),
+        });
+      }
+    } catch { /* empty */ }
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(NOTIFICATION_SETTINGS_KEY, JSON.stringify(soundSettings));
+  }, [soundSettings]);
 
   useEffect(() => {
     const unlockAudio = () => {
@@ -454,6 +519,83 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
 
         {/* Logout */}
         <div style={{ padding: '12px 12px 20px' }}>
+          <div style={{ height: 1, background: '#1e1e2a', marginBottom: 10 }} />
+          <div style={{
+            padding: '9px 10px',
+            borderRadius: 5,
+            border: '1px solid #1e1e2a',
+            background: '#0f0f16',
+            marginBottom: 10,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 9, color: '#848484', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: MONO }}>
+                Notificación
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const ctx = getAudioContext();
+                  ctx?.resume().then(() => playNotificationSound(true)).catch(() => undefined);
+                }}
+                style={{
+                  border: '1px solid rgba(24,93,232,0.28)',
+                  background: 'rgba(24,93,232,0.08)',
+                  color: '#8ab4ff',
+                  borderRadius: 4,
+                  padding: '3px 7px',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Probar
+              </button>
+            </div>
+
+            <select
+              value={soundSettings.sound}
+              onChange={(event) => setSoundSettings((current) => ({
+                ...current,
+                sound: event.target.value as NotificationSound,
+              }))}
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                marginBottom: 8,
+                borderRadius: 4,
+                border: '1px solid #2a2a38',
+                background: '#12121a',
+                color: '#e4e4e8',
+                padding: '6px 8px',
+                fontSize: 11,
+                outline: 'none',
+              }}
+            >
+              {NOTIFICATION_SOUNDS.map((sound) => (
+                <option key={sound.value} value={sound.value}>{sound.label}</option>
+              ))}
+            </select>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={soundSettings.volume}
+                onChange={(event) => setSoundSettings((current) => ({
+                  ...current,
+                  volume: Number(event.target.value),
+                }))}
+                style={{ flex: 1, accentColor: '#185de8' }}
+                aria-label="Volumen de notificación"
+              />
+              <span style={{ width: 30, textAlign: 'right', fontSize: 10, color: '#848484', fontFamily: MONO }}>
+                {Math.round(soundSettings.volume * 100)}%
+              </span>
+            </div>
+          </div>
+
           <div style={{ height: 1, background: '#1e1e2a', marginBottom: 10 }} />
           <button
             onClick={handleLogout}
