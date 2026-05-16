@@ -7,7 +7,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const body = await req.json() as { record_id?: string; client_id?: unknown; action?: string };
+  const body = await req.json() as {
+    record_id?: string;
+    client_id?: unknown;
+    action?: string;
+    event_message?: string;
+    message?: string;
+    event_type?: string;
+    stage?: string;
+    field_label?: string;
+    field_value?: string;
+  };
   const { record_id, action = 'created' } = body;
 
   // Airtable linked record fields come as ["recXXX"] — normalize to plain string
@@ -38,7 +48,44 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'DB error' }, { status: 500 });
   }
 
+  const eventMessage = body.event_message || body.message || buildEventMessage(body);
+  if (eventMessage) {
+    const { error: messageError } = await supabase
+      .from('messages')
+      .insert({
+        lead_id: record_id,
+        client_id,
+        role: 'system',
+        content: eventMessage,
+        was_audio: false,
+      });
+
+    if (messageError) {
+      console.error('sentinel event message insert error:', messageError);
+    }
+  }
+
   return NextResponse.json({ ok: true });
+}
+
+function buildEventMessage(body: {
+  action?: string;
+  event_type?: string;
+  stage?: string;
+  field_label?: string;
+  field_value?: string;
+}) {
+  const action = body.event_type || body.action;
+  if (action === 'stage_updated' && body.stage) {
+    return `Etapa actualizada: ${body.stage}`;
+  }
+  if (action === 'data_collected' && body.field_label && body.field_value) {
+    return `Información recabada: ${body.field_label}: ${body.field_value}`;
+  }
+  if (action === 'qualified') {
+    return 'Lead calificado por Sentinel.';
+  }
+  return '';
 }
 
 export async function GET() {

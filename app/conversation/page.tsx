@@ -61,6 +61,8 @@ export default async function ConversationPage({ searchParams }: PageProps) {
         sellerName: searchParams.sellerName ?? searchParams.vendedor ?? searchParams.seller,
         productType: searchParams.producto ?? searchParams.product,
         measurementsInfo: searchParams.medidas ?? searchParams.measurements,
+        stageChangedAt: undefined,
+        qualifiedAt: undefined,
         botResumeAt: searchParams.bot_resume_at,
         botPausedAt: searchParams.bot_paused_at,
         botPausedBy: searchParams.bot_paused_by,

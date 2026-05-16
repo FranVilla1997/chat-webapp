@@ -297,16 +297,23 @@ export function MessageBubble({ message, isOptimistic, onEdit, onDelete }: Messa
   /* ── System — centered pill ─────────────────── */
   if (role === 'system') {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0' }}>
-        <span style={{
-          fontSize: 10, color: '#848484',
-          background: '#0a0a0f',
-          border: '1px solid #1e1e2a',
-          padding: '3px 14px', borderRadius: 4,
-          fontFamily: MONO,
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
+        <div style={{
+          maxWidth: '78%',
+          fontSize: 11,
+          color: '#a8a8b3',
+          background: 'rgba(107,221,161,0.055)',
+          border: '1px solid rgba(107,221,161,0.16)',
+          borderLeft: '3px solid rgba(107,221,161,0.75)',
+          padding: '8px 12px',
+          borderRadius: 6,
+          lineHeight: 1.45,
         }}>
-          {content}
-        </span>
+          <span style={{ display: 'block', marginBottom: 3, color: '#6bdda1', fontSize: 9, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: MONO }}>
+            Actividad Sentinel
+          </span>
+          <span style={{ whiteSpace: 'pre-wrap' }}>{content}</span>
+        </div>
       </div>
     );
   }

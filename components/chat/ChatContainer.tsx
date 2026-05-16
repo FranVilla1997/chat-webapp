@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { useMessages } from '@/hooks/useMessages';
@@ -12,7 +12,7 @@ import { MessageInput } from './MessageInput';
 import { LeadPanel } from './LeadPanel';
 import { BotPauseControl } from './BotPauseControl';
 import { SaleModal } from './SaleModal';
-import type { LeadInfo } from '@/lib/types';
+import type { LeadInfo, Message } from '@/lib/types';
 
 interface ChatContainerProps {
   leadPhone: string;
@@ -28,6 +28,17 @@ const supabaseBrowser = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
+
+type SentinelEvent = {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: string;
+};
+
+type ChatTimelineItem =
+  | { kind: 'message'; message: Message }
+  | { kind: 'event'; event: SentinelEvent };
 
 function friendlySendError(error: string) {
   const lower = error.toLowerCase();
@@ -239,6 +250,101 @@ function buildQuoteUrl(params: { leadPhone: string; leadId: string; clientId: st
   return url.toString();
 }
 
+function isValidDate(value?: string) {
+  if (!value) return false;
+  return Number.isFinite(new Date(value).getTime());
+}
+
+function sentinelEventDate(...values: Array<string | undefined>) {
+  return values.find(isValidDate) ?? '1970-01-01T00:00:00.000Z';
+}
+
+function normalizeStageLabel(value?: string) {
+  if (!value) return '';
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function deriveSentinelEvents(leadInfo?: LeadInfo): SentinelEvent[] {
+  if (!leadInfo) return [];
+
+  const events: SentinelEvent[] = [];
+  const collected = (leadInfo.fields ?? [])
+    .filter((field) => field.value && field.label.toLowerCase() !== 'instancia')
+    .slice(0, 6);
+
+  if (collected.length) {
+    events.push({
+      id: `sentinel-info-${collected.map((field) => `${field.label}:${field.value}`).join('|')}`,
+      title: 'Información recabada',
+      body: collected.map((field) => `${field.label}: ${field.value}`).join('\n'),
+      createdAt: sentinelEventDate(leadInfo.stageChangedAt, leadInfo.qualifiedAt),
+    });
+  }
+
+  if (leadInfo.stage) {
+    events.push({
+      id: `sentinel-stage-${leadInfo.stage}-${leadInfo.stageChangedAt ?? ''}`,
+      title: 'Etapa actualizada',
+      body: `El lead quedó en ${normalizeStageLabel(leadInfo.stage)}.`,
+      createdAt: sentinelEventDate(leadInfo.stageChangedAt, leadInfo.qualifiedAt),
+    });
+  }
+
+  if (leadInfo.score || leadInfo.qualificationReason) {
+    events.push({
+      id: `sentinel-score-${leadInfo.score ?? ''}-${leadInfo.qualificationReason ?? ''}`,
+      title: 'Calificación actualizada',
+      body: [
+        leadInfo.score ? `Score: ${leadInfo.score} pts` : '',
+        leadInfo.qualificationReason ? `Motivo: ${leadInfo.qualificationReason}` : '',
+      ].filter(Boolean).join('\n'),
+      createdAt: sentinelEventDate(leadInfo.qualifiedAt, leadInfo.stageChangedAt),
+    });
+  }
+
+  if (leadInfo.proposalSentAt || leadInfo.proposalAmount) {
+    events.push({
+      id: `sentinel-proposal-${leadInfo.proposalSentAt ?? ''}-${leadInfo.proposalAmount ?? ''}`,
+      title: 'Propuesta registrada',
+      body: leadInfo.proposalAmount ? `Monto propuesto: ${leadInfo.proposalAmount}` : 'El Sentinel registró una propuesta enviada.',
+      createdAt: sentinelEventDate(leadInfo.proposalSentAt, leadInfo.stageChangedAt),
+    });
+  }
+
+  return events;
+}
+
+function timelineTime(item: ChatTimelineItem) {
+  const value = item.kind === 'message' ? item.message.created_at : item.event.createdAt;
+  return new Date(value).getTime();
+}
+
+function SentinelEventCard({ event }: { event: SentinelEvent }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
+      <div style={{
+        maxWidth: '78%',
+        background: 'linear-gradient(135deg, rgba(107,221,161,0.08), rgba(24,93,232,0.05))',
+        border: '1px solid rgba(107,221,161,0.16)',
+        borderLeft: '3px solid #6bdda1',
+        borderRadius: 7,
+        padding: '9px 12px',
+        color: '#d7d7de',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#6bdda1', boxShadow: '0 0 10px rgba(107,221,161,0.5)' }} />
+          <span style={{ color: '#6bdda1', fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+            {event.title}
+          </span>
+        </div>
+        <p style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 12, lineHeight: 1.55 }}>
+          {event.body}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo, showBack }: ChatContainerProps) {
   const router = useRouter();
   const {
@@ -379,6 +485,22 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
   );
 
   const isCalificado = enrichedLeadInfo?.stage?.toLowerCase() === 'calificado';
+  const sentinelEvents = useMemo(() => deriveSentinelEvents(enrichedLeadInfo), [
+    enrichedLeadInfo?.fields,
+    enrichedLeadInfo?.proposalAmount,
+    enrichedLeadInfo?.proposalSentAt,
+    enrichedLeadInfo?.qualificationReason,
+    enrichedLeadInfo?.qualifiedAt,
+    enrichedLeadInfo?.score,
+    enrichedLeadInfo?.stage,
+    enrichedLeadInfo?.stageChangedAt,
+  ]);
+  const timeline = useMemo<ChatTimelineItem[]>(() => {
+    return [
+      ...sentinelEvents.map((event) => ({ kind: 'event' as const, event })),
+      ...messages.map((message) => ({ kind: 'message' as const, message })),
+    ].sort((a, b) => timelineTime(a) - timelineTime(b));
+  }, [messages, sentinelEvents]);
 
   useEffect(() => {
     setCurrentStage(leadInfo?.stage ?? '');
@@ -483,7 +605,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [timeline]);
 
   if (loading) {
     return (
@@ -615,18 +737,20 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
             padding: '24px 24px 8px',
             display: 'flex', flexDirection: 'column', gap: 12,
           }}>
-            {messages.length === 0 ? (
+            {timeline.length === 0 ? (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.03em' }}>
                   Sin mensajes aún
                 </p>
               </div>
             ) : (
-              messages.map((msg) => (
+              timeline.map((item) => item.kind === 'event' ? (
+                <SentinelEventCard key={item.event.id} event={item.event} />
+              ) : (
                 <MessageBubble
-                  key={msg.id}
-                  message={msg}
-                  isOptimistic={String(msg.id).startsWith('temp-')}
+                  key={item.message.id}
+                  message={item.message}
+                  isOptimistic={String(item.message.id).startsWith('temp-')}
                   onEdit={handleEditMessage}
                   onDelete={handleDeleteMessage}
                 />

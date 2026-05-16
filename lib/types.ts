@@ -61,6 +61,12 @@ export interface LeadInfo {
   sellerName?: string;
   productType?: string;
   measurementsInfo?: string;
+  qualificationReason?: string;
+  qualifiedAt?: string;
+  stageChangedAt?: string;
+  proposalSentAt?: string;
+  proposalAmount?: string;
+  wonAmount?: string;
   botPausedAt?: string;
   botResumeAt?: string;
   botPausedBy?: string;
