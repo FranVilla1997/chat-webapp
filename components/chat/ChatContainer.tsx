@@ -637,9 +637,9 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
   const [botResumeAt, setBotResumeAt] = useState(leadInfo?.botResumeAt ?? '');
   const [pauseBusy, setPauseBusy] = useState(false);
   const enrichedLeadInfo: LeadInfo | undefined = leadInfo
-    ? { ...leadInfo, stage: currentStage || leadInfo.stage, sourceInstance: leadInfo.sourceInstance || instance }
+    ? { ...leadInfo, stage: currentStage || leadInfo.stage, sourceInstance: leadInfo.sourceInstance || instance, botResumeAt }
     : instance
-      ? { stage: currentStage, sourceInstance: instance }
+      ? { stage: currentStage, sourceInstance: instance, botResumeAt }
       : undefined;
   const hasLeadInfo = !!(
     enrichedLeadInfo?.name ||

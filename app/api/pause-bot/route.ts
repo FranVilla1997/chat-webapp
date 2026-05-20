@@ -21,6 +21,8 @@ export async function POST(req: NextRequest) {
     const pausedAt = new Date().toISOString();
     const pausedBy = session.user.email ?? session.user.id;
     await updateLeadFields(recordId, {
+      bot_can_reply: false,
+      bot_can_followup: false,
       bot_paused_at: pausedAt,
       bot_resume_at: resumeDate.toISOString(),
       bot_paused_by: pausedBy,

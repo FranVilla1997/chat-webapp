@@ -11,7 +11,14 @@ interface ChatHeaderProps {
   onBack?: () => void;
 }
 
-function detectStatus(messages: Message[]): 'bot' | 'human' | 'paused' {
+function isFutureDate(value?: string) {
+  if (!value) return false;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) && time > Date.now();
+}
+
+function detectStatus(messages: Message[], leadInfo?: LeadInfo): 'bot' | 'human' | 'paused' {
+  if (isFutureDate(leadInfo?.botResumeAt)) return 'paused';
   if (!messages.length) return 'bot';
   const last = [...messages].reverse().find((m) => m.role !== 'system');
   if (!last) return 'bot';
@@ -34,7 +41,7 @@ const statusConfig = {
 const monoFont = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
 
 export function ChatHeader({ leadPhone, leadInfo, messages, realtimeStatus, panelOpen, onTogglePanel, onBack }: ChatHeaderProps) {
-  const status = detectStatus(messages);
+  const status = detectStatus(messages, leadInfo);
   const { label, dot, ring } = statusConfig[status];
   const isConnected = realtimeStatus === 'SUBSCRIBED';
   const displayName = leadInfo?.name;
