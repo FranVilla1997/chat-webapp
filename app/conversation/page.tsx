@@ -24,6 +24,10 @@ interface PageProps {
     bot_resume_at?: string;
     bot_paused_at?: string;
     bot_paused_by?: string;
+    airtable_base_id?: string;
+    airtable_table_id?: string;
+    base_id?: string;
+    table_id?: string;
   };
 }
 
@@ -41,9 +45,12 @@ function parseLeadFields(raw?: string): LeadField[] {
 
 export default async function ConversationPage({ searchParams }: PageProps) {
   const { lead_id } = searchParams;
+  const airtableBaseId = searchParams.airtable_base_id ?? searchParams.base_id;
+  const airtableTableId = searchParams.airtable_table_id ?? searchParams.table_id;
+  const airtableSource = { baseId: airtableBaseId, tableId: airtableTableId };
 
   // Fetch lead from Airtable when lead_id is present
-  const airtableLead = lead_id ? await getLeadById(lead_id) : null;
+  const airtableLead = lead_id ? await getLeadById(lead_id, airtableSource) : null;
 
   // Resolve props: prefer Airtable data, fall back to URL params for backward compat
   const leadPhone  = airtableLead?.phone         ?? searchParams.lead_phone;
@@ -113,6 +120,8 @@ export default async function ConversationPage({ searchParams }: PageProps) {
       instance={instance}
       leadInfo={leadInfo}
       showBack
+      airtableBaseId={airtableBaseId}
+      airtableTableId={airtableTableId}
     />
   );
 }

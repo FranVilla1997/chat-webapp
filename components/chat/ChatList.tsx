@@ -794,6 +794,8 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
             clientId={selectedLead.client_record_id}
             instance={selectedLead.source_instance}
             leadInfo={buildLeadInfoFromAirtable(selectedLead)}
+            airtableBaseId={airtableBaseId}
+            airtableTableId={airtableTableId}
           />
         ) : (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>

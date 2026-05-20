@@ -21,6 +21,8 @@ interface ChatContainerProps {
   instance: string;
   leadInfo?: LeadInfo;
   showBack?: boolean;
+  airtableBaseId?: string;
+  airtableTableId?: string;
 }
 
 const QUOTE_APP_URL = process.env.NEXT_PUBLIC_QUOTE_APP_URL ?? 'https://roller-cheaper-quotes.vercel.app/quotes/new';
@@ -506,7 +508,16 @@ function SentinelEventCard({ event }: { event: SentinelEvent }) {
     </div>
   );
 }
-export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo, showBack }: ChatContainerProps) {
+export function ChatContainer({
+  leadPhone,
+  leadId,
+  clientId,
+  instance,
+  leadInfo,
+  showBack,
+  airtableBaseId,
+  airtableTableId,
+}: ChatContainerProps) {
   const router = useRouter();
   const {
     messages, loading, error, realtimeStatus,
@@ -708,7 +719,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
       const response = await fetch('/api/pause-bot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recordId: leadId, resumeAt }),
+        body: JSON.stringify({ recordId: leadId, resumeAt, airtableBaseId, airtableTableId }),
       });
       const result = await response.json() as { error?: string; botResumeAt?: string };
       if (!response.ok) throw new Error(result.error ?? 'No se pudo pausar el bot');
@@ -727,7 +738,7 @@ export function ChatContainer({ leadPhone, leadId, clientId, instance, leadInfo,
       const response = await fetch('/api/resume-bot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recordId: leadId }),
+        body: JSON.stringify({ recordId: leadId, airtableBaseId, airtableTableId }),
       });
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error ?? 'No se pudo reanudar el bot');

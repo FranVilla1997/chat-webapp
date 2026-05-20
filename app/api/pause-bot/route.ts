@@ -8,7 +8,12 @@ export async function POST(req: NextRequest) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { recordId, resumeAt } = await req.json() as { recordId?: string; resumeAt?: string };
+    const { recordId, resumeAt, airtableBaseId, airtableTableId } = await req.json() as {
+      recordId?: string;
+      resumeAt?: string;
+      airtableBaseId?: string;
+      airtableTableId?: string;
+    };
     if (!recordId || !resumeAt) {
       return NextResponse.json({ error: 'Missing recordId or resumeAt' }, { status: 400 });
     }
@@ -26,6 +31,9 @@ export async function POST(req: NextRequest) {
       bot_paused_at: pausedAt,
       bot_resume_at: resumeDate.toISOString(),
       bot_paused_by: pausedBy,
+    }, {
+      baseId: airtableBaseId,
+      tableId: airtableTableId,
     });
 
     return NextResponse.json({

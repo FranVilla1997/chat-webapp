@@ -183,8 +183,8 @@ export async function getLeadById(recordId: string, source?: AirtableSource): Pr
   return mapRecord(data);
 }
 
-export async function updateLeadFields(recordId: string, fields: Record<string, unknown>): Promise<void> {
-  const res = await fetch(`${getBaseUrl()}/${recordId}`, {
+export async function updateLeadFields(recordId: string, fields: Record<string, unknown>, source?: AirtableSource): Promise<void> {
+  const res = await fetch(`${getBaseUrl(source)}/${recordId}`, {
     method: 'PATCH',
     headers: HEADERS,
     body: JSON.stringify({ fields }),
