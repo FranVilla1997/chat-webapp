@@ -19,6 +19,7 @@ interface StageOption {
 }
 
 const MONO = `'SF Mono', 'Consolas', 'Liberation Mono', monospace`;
+const PROPOSAL_STAGE = 'Propuesta enviada';
 
 const statusConfig: Record<string, { label: string; color: string; bg: string; border: string; dot: string }> = {
   pending:   { label: 'Pendiente', color: '#f59e0b', bg: 'rgba(245,158,11,0.06)',  border: 'rgba(245,158,11,0.2)',  dot: '#f59e0b' },
@@ -30,6 +31,7 @@ const statusConfig: Record<string, { label: string; color: string; bg: string; b
 const stageColors: Record<string, { bg: string; text: string; border: string }> = {
   calificado:        { bg: 'rgba(107,221,161,0.1)', text: '#6bdda1', border: 'rgba(107,221,161,0.25)' },
   en_calificacion:   { bg: 'rgba(245,158,11,0.1)',  text: '#f59e0b', border: 'rgba(245,158,11,0.25)'  },
+  [PROPOSAL_STAGE]:  { bg: 'rgba(24,93,232,0.1)',   text: '#185de8', border: 'rgba(24,93,232,0.25)'   },
   propuesta_enviada: { bg: 'rgba(24,93,232,0.1)',   text: '#185de8', border: 'rgba(24,93,232,0.25)'   },
   nuevo:             { bg: 'rgba(59,126,245,0.1)',  text: '#3b7ef5', border: 'rgba(59,126,245,0.25)'  },
   en_proceso:        { bg: 'rgba(245,158,11,0.1)',  text: '#f59e0b', border: 'rgba(245,158,11,0.25)'  },
@@ -39,7 +41,18 @@ const stageColors: Record<string, { bg: string; text: string; border: string }> 
 };
 
 function getStatus(s: string) { return statusConfig[s] ?? statusConfig.pending; }
-function getStageBadge(s: string) { return stageColors[s.toLowerCase()] ?? stageColors['nuevo']; }
+function normalizeStageKey(stage?: string) {
+  const value = String(stage ?? '').trim();
+  const lower = value.toLowerCase();
+  if (lower === 'propuesta_enviada' || lower === 'propuesta enviada') return PROPOSAL_STAGE;
+  return value;
+}
+function formatStageLabel(stage?: string) {
+  const key = normalizeStageKey(stage);
+  if (key === PROPOSAL_STAGE) return PROPOSAL_STAGE;
+  return key.replace(/_/g, ' ');
+}
+function getStageBadge(s: string) { return stageColors[normalizeStageKey(s)] ?? stageColors[s.toLowerCase()] ?? stageColors['nuevo']; }
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -193,8 +206,11 @@ export function LeadPanel({ lead, followups, open, onClose, onStageChange }: Lea
   }, [open, stages.length]);
 
   const selectedStageId = useMemo(() => {
-    const stage = (lead.stage ?? '').toLowerCase();
-    return stages.find((item) => item.name.toLowerCase() === stage || item.displayName.toLowerCase() === stage)?.id ?? '';
+    const stage = normalizeStageKey(lead.stage).toLowerCase();
+    return stages.find((item) => (
+      normalizeStageKey(item.name).toLowerCase() === stage ||
+      normalizeStageKey(item.displayName).toLowerCase() === stage
+    ))?.id ?? '';
   }, [lead.stage, stages]);
 
   async function changeStage(stageId: string) {
@@ -261,7 +277,7 @@ export function LeadPanel({ lead, followups, open, onClose, onStageChange }: Lea
                 fontSize: 10, fontWeight: 700, color: stageBadge.text,
                 fontFamily: MONO, textTransform: 'uppercase', letterSpacing: '0.06em',
               }}>
-                {lead.stage.replace('_', ' ')}
+                {formatStageLabel(lead.stage)}
               </span>
               {onStageChange && (
                 <div style={{ marginTop: 8 }}>

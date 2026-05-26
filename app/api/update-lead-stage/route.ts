@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server';
 import { getPipelineStages, updateLeadStage } from '@/lib/airtable';
 
+function normalizeStage(stage?: string) {
+  const value = String(stage ?? '').trim();
+  const lower = value.toLowerCase();
+  if (lower === 'propuesta_enviada' || lower === 'propuesta enviada') return 'propuesta enviada';
+  return lower;
+}
+
 export async function POST(req: NextRequest) {
   const supabase = createSupabaseServerClient();
   const { data: { session } } = await supabase.auth.getSession();
@@ -18,9 +25,10 @@ export async function POST(req: NextRequest) {
   }
 
   const stages = await getPipelineStages();
+  const requestedStage = normalizeStage(stage);
   const selected = stageId
     ? stages.find((item) => item.id === stageId)
-    : stages.find((item) => item.name === stage || item.displayName === stage);
+    : stages.find((item) => normalizeStage(item.name) === requestedStage || normalizeStage(item.displayName) === requestedStage);
 
   if (!selected) {
     return NextResponse.json({ error: 'Etapa no encontrada en Airtable' }, { status: 404 });

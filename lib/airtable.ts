@@ -75,6 +75,13 @@ function extractUrl(v: unknown): string {
   return String(v);
 }
 
+function normalizeStageName(stage?: string): string {
+  const value = String(stage ?? '').trim();
+  const lower = value.toLowerCase();
+  if (lower === 'propuesta_enviada' || lower === 'propuesta enviada') return 'Propuesta enviada';
+  return value;
+}
+
 function mapRecord(record: { id: string; fields: Record<string, unknown> }): AirtableLead {
   const f = record.fields;
   return {
@@ -157,7 +164,8 @@ export async function getLeadsBySellerName(sellerName: string, source?: Airtable
   const STAGE_ORDER: Record<string, number> = {
     calificado:       0,
     en_calificacion:  1,
-    propuesta_enviada:2,
+    'Propuesta enviada': 2,
+    propuesta_enviada: 2,
     en_proceso:       3,
     nuevo:            4,
     no_responde:      5,
@@ -166,8 +174,8 @@ export async function getLeadsBySellerName(sellerName: string, source?: Airtable
   };
 
   return leads.sort((a, b) => {
-    const sa = STAGE_ORDER[a.current_stage] ?? 99;
-    const sb = STAGE_ORDER[b.current_stage] ?? 99;
+    const sa = STAGE_ORDER[normalizeStageName(a.current_stage)] ?? 99;
+    const sb = STAGE_ORDER[normalizeStageName(b.current_stage)] ?? 99;
     if (sa !== sb) return sa - sb;
     if (!a.last_message_at) return 1;
     if (!b.last_message_at) return -1;

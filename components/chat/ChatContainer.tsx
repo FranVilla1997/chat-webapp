@@ -268,6 +268,8 @@ function sentinelEventDate(...values: Array<string | undefined>) {
 
 function normalizeStageLabel(value?: string) {
   if (!value) return '';
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'propuesta_enviada' || normalized === 'propuesta enviada') return 'Propuesta enviada';
   return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 

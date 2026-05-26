@@ -40,13 +40,28 @@ const DEFAULT_SOUND_SETTINGS: NotificationSoundSettings = {
   volume: 1,
 };
 const NOTIFICATION_GAIN_BOOST = 3.4;
+const PROPOSAL_STAGE = 'Propuesta enviada';
+
+function normalizeStageKey(stage?: string) {
+  const value = String(stage ?? '').trim();
+  const lower = value.toLowerCase();
+  if (lower === 'propuesta_enviada' || lower === 'propuesta enviada') return PROPOSAL_STAGE;
+  return value;
+}
+
+function formatStageLabel(stage?: string) {
+  const key = normalizeStageKey(stage);
+  if (key === PROPOSAL_STAGE) return PROPOSAL_STAGE;
+  if (key === 'en_calificacion') return 'calificando';
+  return key.replace(/_/g, ' ');
+}
 
 /* ── Etapas del embudo ── */
 const FUNNEL: { key: string; label: string; color: string }[] = [
   { key: 'all',              label: 'Todos',            color: '#848484' },
   { key: 'calificado',       label: 'Calificado',       color: '#6bdda1' },
   { key: 'en_calificacion',  label: 'Calificando',      color: '#f59e0b' },
-  { key: 'propuesta_enviada',label: 'Propuesta',        color: '#185de8' },
+  { key: PROPOSAL_STAGE,     label: 'Propuesta enviada', color: '#185de8' },
   { key: 'nuevo',            label: 'Nuevo',            color: '#3b7ef5' },
   { key: 'en_proceso',       label: 'En proceso',       color: '#f59e0b' },
   { key: 'no_responde',      label: 'No responde',      color: '#848484' },
@@ -57,6 +72,7 @@ const FUNNEL: { key: string; label: string; color: string }[] = [
 const STAGE_BADGE: Record<string, { bg: string; color: string }> = {
   calificado:        { bg: 'rgba(107,221,161,0.10)', color: '#6bdda1' },
   en_calificacion:   { bg: 'rgba(245,158,11,0.10)',  color: '#f59e0b' },
+  [PROPOSAL_STAGE]:  { bg: 'rgba(24,93,232,0.10)',   color: '#185de8' },
   propuesta_enviada: { bg: 'rgba(24,93,232,0.10)',   color: '#185de8' },
   nuevo:             { bg: 'rgba(59,126,245,0.10)',  color: '#3b7ef5' },
   en_proceso:        { bg: 'rgba(245,158,11,0.10)',  color: '#f59e0b' },
@@ -395,13 +411,16 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
 
   const counts = useMemo(() => {
     const m: Record<string, number> = { all: leads.length };
-    for (const l of leads) m[l.current_stage] = (m[l.current_stage] ?? 0) + 1;
+    for (const l of leads) {
+      const key = normalizeStageKey(l.current_stage);
+      m[key] = (m[key] ?? 0) + 1;
+    }
     return m;
   }, [leads]);
 
   const filtered = useMemo(() => {
     const list = leads.filter((l) => {
-      const matchStage = activeStage === 'all' || l.current_stage === activeStage;
+      const matchStage = activeStage === 'all' || normalizeStageKey(l.current_stage) === activeStage;
       const q = search.toLowerCase();
       const matchSearch = !q ||
         l.whatsapp_display_name.toLowerCase().includes(q) ||
@@ -695,7 +714,8 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
           ) : filtered.map((lead) => {
             const isSelected = selectedLead?.RecordID === lead.RecordID;
             const isNew = newLeadIds.has(lead.RecordID) && !isSelected;
-            const badge = STAGE_BADGE[lead.current_stage] ?? STAGE_BADGE['nuevo'];
+            const stageKey = normalizeStageKey(lead.current_stage);
+            const badge = STAGE_BADGE[stageKey] ?? STAGE_BADGE['nuevo'];
             const initial = (lead.whatsapp_display_name || lead.name || lead.phone).charAt(0).toUpperCase();
             const lastMsg = msgPreviews[lead.RecordID];
             const seenTimestamp = seenAt[lead.RecordID];
@@ -802,7 +822,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
                     background: badge.bg, color: badge.color,
                     textTransform: 'uppercase', letterSpacing: '0.06em',
                   }}>
-                    {lead.current_stage === 'en_calificacion' ? 'calificando' : lead.current_stage.replace('_', ' ')}
+                    {formatStageLabel(lead.current_stage)}
                   </span>
                   {lead.score && (
                     <span style={{ fontSize: 9, color: '#404050', fontFamily: MONO, marginLeft: 5 }}>
