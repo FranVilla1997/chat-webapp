@@ -110,6 +110,8 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
   );
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastSoundAtRef = useRef(0);
+  const refreshTimerRef = useRef<number | null>(null);
+  const pendingMarkNewRef = useRef(false);
 
   function getAudioContext() {
     if (typeof window === 'undefined') return null;
@@ -235,6 +237,26 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
     }
   }
 
+  function scheduleRefreshLeads(options: { markNew?: boolean } = {}) {
+    if (options.markNew) pendingMarkNewRef.current = true;
+    if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = window.setTimeout(() => {
+      const markNew = pendingMarkNewRef.current;
+      pendingMarkNewRef.current = false;
+      refreshTimerRef.current = null;
+      refreshLeads({ markNew }).catch(() => undefined);
+    }, 250);
+  }
+
+  function updateLeadStageLocally(recordId: string, stage: string) {
+    setLeads(current => current.map(lead => (
+      lead.RecordID === recordId ? { ...lead, current_stage: stage, stage_changed_at: new Date().toISOString() } : lead
+    )));
+    setSelectedLead(current => (
+      current?.RecordID === recordId ? { ...current, current_stage: stage, stage_changed_at: new Date().toISOString() } : current
+    ));
+  }
+
   async function refreshMessagePreviews() {
     const leadIds = leadsRef.current.map(l => l.RecordID);
     if (!leadIds.length) return;
@@ -299,19 +321,23 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
     };
   }, []);
 
-  // Realtime: nuevos leads
+  // Realtime: cambios de leads reflejados desde Airtable/n8n/webhooks internos.
   useEffect(() => {
     const channel = supabase
       .channel('lead-notifications')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lead_notifications' },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_notifications' },
         async (payload) => {
-          const notifClientId = (payload.new as { client_id?: string }).client_id;
+          const row = (payload.new ?? payload.old) as { client_id?: string; action?: string } | null;
+          const notifClientId = row?.client_id;
           if (clientId && notifClientId && notifClientId !== clientId) return;
-          await refreshLeads({ markNew: true });
+          scheduleRefreshLeads({ markNew: payload.eventType === 'INSERT' && row?.action === 'created' });
         }
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
+      supabase.removeChannel(channel);
+    };
   }, [clientId, airtableBaseId, airtableTableId]);
 
   // Polling suave: mantiene leads y etapas al día aunque Realtime/Airtable no notifique.
@@ -340,17 +366,23 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
         (payload) => {
           const msg = payload.new as { lead_id: string; role: string; content: string; created_at: string; client_id: string };
-          // Solo mensajes del lead (no bot/agente)
-          if (msg.role !== 'user') return;
-          // Solo leads de este vendedor
+          if (clientId && msg.client_id && msg.client_id !== clientId) return;
+
           const lead = leadsRef.current.find(l => l.RecordID === msg.lead_id);
-          if (!lead) return;
+          if (!lead) {
+            scheduleRefreshLeads({ markNew: msg.role === 'user' });
+            return;
+          }
+
           const latestMessage = { content: msg.content, role: msg.role, created_at: msg.created_at };
-          if (shouldNotifyIncoming(msg.lead_id, latestMessage, { allowFirst: true })) {
+          if (msg.role === 'user' && shouldNotifyIncoming(msg.lead_id, latestMessage, { allowFirst: true })) {
             notifyIncomingMessage(lead, latestMessage);
           }
 
-          // Actualizar preview del mensaje
+          if (msg.role === 'system') {
+            scheduleRefreshLeads();
+          }
+
           setMsgPreviews(prev => ({
             ...prev,
             [msg.lead_id]: latestMessage,
@@ -359,7 +391,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [clientId, airtableBaseId, airtableTableId]);
 
   const counts = useMemo(() => {
     const m: Record<string, number> = { all: leads.length };
@@ -796,6 +828,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
             leadInfo={buildLeadInfoFromAirtable(selectedLead)}
             airtableBaseId={airtableBaseId}
             airtableTableId={airtableTableId}
+            onLeadStageChange={updateLeadStageLocally}
           />
         ) : (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>

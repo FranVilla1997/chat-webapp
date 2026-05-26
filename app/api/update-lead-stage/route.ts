@@ -50,6 +50,13 @@ export async function POST(req: NextRequest) {
       created_at: now,
     });
     if (error) console.error('manual stage event insert error:', error);
+
+    const { error: notificationError } = await service.from('lead_notifications').insert({
+      record_id: recordId,
+      client_id: clientId,
+      action: 'stage_updated',
+    });
+    if (notificationError) console.error('manual stage notification insert error:', notificationError);
   }
 
   return NextResponse.json({ ok: true, stage: selected });

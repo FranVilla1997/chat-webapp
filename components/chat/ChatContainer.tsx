@@ -23,6 +23,7 @@ interface ChatContainerProps {
   showBack?: boolean;
   airtableBaseId?: string;
   airtableTableId?: string;
+  onLeadStageChange?: (recordId: string, stage: string) => void;
 }
 
 const QUOTE_APP_URL = process.env.NEXT_PUBLIC_QUOTE_APP_URL ?? 'https://roller-cheaper-quotes.vercel.app/quotes/new';
@@ -517,6 +518,7 @@ export function ChatContainer({
   showBack,
   airtableBaseId,
   airtableTableId,
+  onLeadStageChange,
 }: ChatContainerProps) {
   const router = useRouter();
   const {
@@ -766,6 +768,7 @@ export function ChatContainer({
       throw new Error(result.error ?? 'No se pudo actualizar la etapa');
     }
     setCurrentStage(result.stage.name);
+    onLeadStageChange?.(leadId, result.stage.name);
     setSaleNotice(`Etapa actualizada a ${result.stage.displayName}.`);
     return result.stage;
   }
@@ -1009,6 +1012,7 @@ export function ChatContainer({
         onClose={() => setSaleModalOpen(false)}
         onCreated={(saleId, warnings) => {
           setCurrentStage('cerrado_ganado');
+          onLeadStageChange?.(leadId, 'cerrado_ganado');
           setSaleNotice(
             `Venta registrada en Airtable${saleId ? ` (${saleId})` : ''}. Lead marcado como cerrado ganado.${
               warnings?.length ? ` ${warnings.join(' ')}` : ''

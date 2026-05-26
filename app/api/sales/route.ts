@@ -118,6 +118,12 @@ export async function POST(req: NextRequest) {
       const wonStage = stages.find((stage) => stage.name === 'cerrado_ganado');
       if (!wonStage) throw new Error('No se encontró la etapa cerrado_ganado.');
       await updateLeadStage(leadId, wonStage.id);
+      const { error: notificationError } = await service.from('lead_notifications').insert({
+        record_id: leadId,
+        client_id: clientId,
+        action: 'stage_updated',
+      });
+      if (notificationError) console.error('Lead won stage notification failed:', notificationError);
     } catch (err) {
       console.error('Lead won stage update failed:', err);
       warnings.push('No se pudo mover el lead a cerrado_ganado.');
