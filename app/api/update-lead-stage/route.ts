@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server';
-import { getPipelineStages, updateLeadStage } from '@/lib/airtable';
+import { getPipelineStages, updateLeadFields, updateLeadStage } from '@/lib/airtable';
 
 function normalizeStage(stage?: string) {
   const value = String(stage ?? '').trim();
@@ -35,6 +35,9 @@ export async function POST(req: NextRequest) {
   }
 
   await updateLeadStage(recordId, selected.id);
+  if (normalizeStage(selected.name) === 'propuesta enviada' || normalizeStage(selected.displayName) === 'propuesta enviada') {
+    await updateLeadFields(recordId, { bot_can_followup: true });
+  }
 
   if (clientId) {
     const service = createSupabaseServiceClient();
