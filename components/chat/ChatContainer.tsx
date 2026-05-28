@@ -797,6 +797,23 @@ export function ChatContainer({
     deleteLocalMessage(messageId);
   }
 
+  async function handleCancelFollowups(followupIds: number[]) {
+    setStageError(null);
+    setSaleNotice(null);
+    const response = await fetch('/api/followups/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        followupIds,
+        leadId,
+        clientId,
+      }),
+    });
+    const result = await response.json().catch(() => ({})) as { error?: string; cancelled?: number };
+    if (!response.ok) throw new Error(result.error ?? 'No se pudieron cancelar los seguimientos');
+    setSaleNotice(`${result.cancelled ?? followupIds.length} seguimiento${(result.cancelled ?? followupIds.length) === 1 ? '' : 's'} cancelado${(result.cancelled ?? followupIds.length) === 1 ? '' : 's'}.`);
+  }
+
   function handleTimelineScroll() {
     const el = scrollContainerRef.current;
     if (!el) return;
@@ -1002,6 +1019,7 @@ export function ChatContainer({
             open={effectivePanelOpen}
             onClose={() => setPanelOpen(false)}
             onStageChange={handleChangeStage}
+            onCancelFollowups={handleCancelFollowups}
           />
         )}
       </div>

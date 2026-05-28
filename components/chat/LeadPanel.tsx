@@ -10,6 +10,7 @@ interface LeadPanelProps {
   open: boolean;
   onClose: () => void;
   onStageChange?: (stageId: string) => Promise<{ name: string; displayName: string }>;
+  onCancelFollowups?: (followupIds: number[]) => Promise<void>;
 }
 
 interface StageOption {
@@ -103,9 +104,22 @@ function Divider() {
   return <div style={{ height: 1, background: '#1e1e2a' }} />;
 }
 
-function FollowupCard({ f }: { f: Followup }) {
+function FollowupCard({ f, onCancel }: { f: Followup; onCancel?: (id: number) => Promise<void> }) {
   const st = getStatus(f.status);
   const past = f.status === 'pending' && isPast(f.scheduled_at);
+  const [cancelling, setCancelling] = useState(false);
+
+  async function cancel() {
+    if (!onCancel || cancelling) return;
+    const ok = window.confirm(`Cancelar el seguimiento #${f.attempt_number}?`);
+    if (!ok) return;
+    setCancelling(true);
+    try {
+      await onCancel(f.id);
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   return (
     <div style={{
@@ -164,6 +178,31 @@ function FollowupCard({ f }: { f: Followup }) {
           {f.cancel_reason}
         </p>
       )}
+
+      {f.status === 'pending' && onCancel && (
+        <button
+          type="button"
+          onClick={() => void cancel()}
+          disabled={cancelling}
+          style={{
+            alignSelf: 'flex-start',
+            border: '1px solid rgba(245,158,11,0.22)',
+            background: cancelling ? 'rgba(245,158,11,0.06)' : 'transparent',
+            color: '#f59e0b',
+            borderRadius: 4,
+            padding: '4px 8px',
+            fontSize: 10,
+            fontWeight: 700,
+            cursor: cancelling ? 'not-allowed' : 'pointer',
+            fontFamily: MONO,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+            opacity: cancelling ? 0.65 : 1,
+          }}
+        >
+          {cancelling ? 'Cancelando...' : 'Cancelar'}
+        </button>
+      )}
     </div>
   );
 }
@@ -182,7 +221,7 @@ function Pill({ children, color }: { children: React.ReactNode; color: string })
   );
 }
 
-export function LeadPanel({ lead, followups, open, onClose, onStageChange }: LeadPanelProps) {
+export function LeadPanel({ lead, followups, open, onClose, onStageChange, onCancelFollowups }: LeadPanelProps) {
   const phone = formatPhone(lead.phone);
   const stageBadge = lead.stage ? getStageBadge(lead.stage) : null;
   const pending = followups.filter(f => f.status === 'pending');
@@ -191,6 +230,7 @@ export function LeadPanel({ lead, followups, open, onClose, onStageChange }: Lea
   const [loadingStages, setLoadingStages] = useState(false);
   const [stageBusy, setStageBusy] = useState(false);
   const [stageError, setStageError] = useState<string | null>(null);
+  const [cancelAllBusy, setCancelAllBusy] = useState(false);
 
   useEffect(() => {
     if (!open || stages.length) return;
@@ -223,6 +263,23 @@ export function LeadPanel({ lead, followups, open, onClose, onStageChange }: Lea
       setStageError(err instanceof Error ? err.message : 'No se pudo actualizar la etapa');
     } finally {
       setStageBusy(false);
+    }
+  }
+
+  async function cancelFollowup(id: number) {
+    if (!onCancelFollowups) return;
+    await onCancelFollowups([id]);
+  }
+
+  async function cancelAllPending() {
+    if (!onCancelFollowups || pending.length === 0 || cancelAllBusy) return;
+    const ok = window.confirm(`Cancelar ${pending.length} seguimiento${pending.length > 1 ? 's' : ''} pendiente${pending.length > 1 ? 's' : ''}?`);
+    if (!ok) return;
+    setCancelAllBusy(true);
+    try {
+      await onCancelFollowups(pending.map((f) => f.id));
+    } finally {
+      setCancelAllBusy(false);
     }
   }
 
@@ -342,19 +399,44 @@ export function LeadPanel({ lead, followups, open, onClose, onStageChange }: Lea
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <Label>Seguimientos</Label>
                 {pending.length > 0 && (
-                  <span style={{
-                    fontSize: 9, fontWeight: 700, fontFamily: MONO,
-                    background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
-                    border: '1px solid rgba(245,158,11,0.25)',
-                    padding: '2px 7px', borderRadius: 3,
-                    textTransform: 'uppercase', letterSpacing: '0.06em',
-                  }}>
-                    {pending.length} pendiente{pending.length > 1 ? 's' : ''}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, fontFamily: MONO,
+                      background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
+                      border: '1px solid rgba(245,158,11,0.25)',
+                      padding: '2px 7px', borderRadius: 3,
+                      textTransform: 'uppercase', letterSpacing: '0.06em',
+                    }}>
+                      {pending.length} pendiente{pending.length > 1 ? 's' : ''}
+                    </span>
+                    {onCancelFollowups && (
+                      <button
+                        type="button"
+                        onClick={() => void cancelAllPending()}
+                        disabled={cancelAllBusy}
+                        style={{
+                          border: '1px solid rgba(64,64,80,0.45)',
+                          background: 'transparent',
+                          color: '#848484',
+                          borderRadius: 3,
+                          padding: '2px 7px',
+                          fontSize: 9,
+                          fontWeight: 700,
+                          fontFamily: MONO,
+                          cursor: cancelAllBusy ? 'not-allowed' : 'pointer',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                          opacity: cancelAllBusy ? 0.6 : 1,
+                        }}
+                      >
+                        Cancelar
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {pending.map(f => <FollowupCard key={f.id} f={f} />)}
+                {pending.map(f => <FollowupCard key={f.id} f={f} onCancel={onCancelFollowups ? cancelFollowup : undefined} />)}
                 {rest.length > 0 && (
                   <details>
                     <summary style={{
