@@ -41,6 +41,7 @@ const DEFAULT_SOUND_SETTINGS: NotificationSoundSettings = {
 };
 const NOTIFICATION_GAIN_BOOST = 3.4;
 const PROPOSAL_STAGE = 'Propuesta enviada';
+const NEEDS_REPLY_FILTER = 'needs_reply';
 
 function normalizeStageKey(stage?: string) {
   const value = String(stage ?? '').trim();
@@ -99,6 +100,10 @@ function lastActivityTime(lead: AirtableLead, previews: Record<string, LastMessa
   return new Date(previewTime || leadTime || fallbackTime || 0).getTime();
 }
 
+function requiresHumanReply(lead: AirtableLead, previews: Record<string, LastMessage>) {
+  return previews[lead.RecordID]?.role === 'user';
+}
+
 interface Toast {
   id: string;
   lead: AirtableLead;
@@ -112,7 +117,6 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
   const [activeStage, setActiveStage] = useState('all');
   const [selectedLead, setSelectedLead] = useState<AirtableLead | null>(null);
   const [msgPreviews, setMsgPreviews] = useState<Record<string, LastMessage>>(lastMessages);
-  const [seenAt, setSeenAt] = useState<Record<string, string>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [search, setSearch] = useState('');
   const [loggingOut, setLoggingOut] = useState(false);
@@ -297,11 +301,6 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
 
   useEffect(() => {
     try {
-      const stored = JSON.parse(localStorage.getItem('scala_seen_leads') ?? '{}');
-      setSeenAt(stored);
-    } catch { /* empty */ }
-
-    try {
       const storedSettings = JSON.parse(localStorage.getItem(NOTIFICATION_SETTINGS_KEY) ?? 'null') as Partial<NotificationSoundSettings> | null;
       const storedSound = storedSettings?.sound;
       if (
@@ -410,17 +409,23 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
   }, [clientId, airtableBaseId, airtableTableId]);
 
   const counts = useMemo(() => {
-    const m: Record<string, number> = { all: leads.length };
+    const m: Record<string, number> = {
+      all: leads.length,
+      [NEEDS_REPLY_FILTER]: leads.filter((lead) => requiresHumanReply(lead, msgPreviews)).length,
+    };
     for (const l of leads) {
       const key = normalizeStageKey(l.current_stage);
       m[key] = (m[key] ?? 0) + 1;
     }
     return m;
-  }, [leads]);
+  }, [leads, msgPreviews]);
 
   const filtered = useMemo(() => {
     const list = leads.filter((l) => {
-      const matchStage = activeStage === 'all' || normalizeStageKey(l.current_stage) === activeStage;
+      const matchStage =
+        activeStage === 'all' ||
+        (activeStage === NEEDS_REPLY_FILTER && requiresHumanReply(l, msgPreviews)) ||
+        normalizeStageKey(l.current_stage) === activeStage;
       const q = search.toLowerCase();
       const matchSearch = !q ||
         l.whatsapp_display_name.toLowerCase().includes(q) ||
@@ -429,6 +434,10 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
       return matchStage && matchSearch;
     });
     return list.sort((a, b) => {
+      const aNeedsReply = requiresHumanReply(a, msgPreviews) ? 0 : 1;
+      const bNeedsReply = requiresHumanReply(b, msgPreviews) ? 0 : 1;
+      if (aNeedsReply !== bNeedsReply) return aNeedsReply - bNeedsReply;
+
       const aNew = newLeadIds.has(a.RecordID) ? 0 : 1;
       const bNew = newLeadIds.has(b.RecordID) ? 0 : 1;
       if (aNew !== bNew) return aNew - bNew;
@@ -444,6 +453,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
   }
 
   const calificadosCount = counts['calificado'] ?? 0;
+  const needsReplyCount = counts[NEEDS_REPLY_FILTER] ?? 0;
 
   return (
     <div style={{ display: 'flex', height: '100svh', overflow: 'hidden', background: '#000' }}>
@@ -490,6 +500,40 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
         )}
 
         <div style={{ height: 1, background: '#1e1e2a', margin: '0 12px 14px' }} />
+
+        {/* Sin responder CTA */}
+        {needsReplyCount > 0 && (
+          <button
+            onClick={() => setActiveStage(NEEDS_REPLY_FILTER)}
+            style={{
+              margin: '0 12px 14px',
+              padding: '10px 12px',
+              borderRadius: 5,
+              border: `1px solid ${activeStage === NEEDS_REPLY_FILTER ? 'rgba(245,158,11,0.48)' : 'rgba(245,158,11,0.28)'}`,
+              background: activeStage === NEEDS_REPLY_FILTER ? 'rgba(245,158,11,0.13)' : 'rgba(245,158,11,0.06)',
+              cursor: 'pointer',
+              textAlign: 'left',
+              animation: activeStage !== NEEDS_REPLY_FILTER ? 'leadAlert 2.2s ease-in-out infinite' : 'none',
+              transition: 'all 0.15s',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', letterSpacing: '0.04em' }}>Sin responder</span>
+              <span style={{
+                fontSize: 11,
+                fontWeight: 900,
+                color: '#000',
+                background: '#f59e0b',
+                borderRadius: 3,
+                padding: '1px 7px',
+                fontFamily: MONO,
+              }}>{needsReplyCount}</span>
+            </div>
+            <p style={{ fontSize: 10, color: 'rgba(245,158,11,0.7)', margin: '3px 0 0' }}>
+              Último mensaje del cliente
+            </p>
+          </button>
+        )}
 
         {/* Calificados CTA */}
         {calificadosCount > 0 && (
@@ -700,9 +744,31 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
               }}
             />
           </div>
-          <p style={{ fontSize: 10, color: '#404050', margin: '7px 0 0', fontFamily: MONO, letterSpacing: '0.04em' }}>
-            {filtered.length} {filtered.length === 1 ? 'lead' : 'leads'}
-          </p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 7 }}>
+            <p style={{ fontSize: 10, color: '#404050', margin: 0, fontFamily: MONO, letterSpacing: '0.04em' }}>
+              {filtered.length} {filtered.length === 1 ? 'lead' : 'leads'}
+            </p>
+            {needsReplyCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveStage(NEEDS_REPLY_FILTER)}
+                style={{
+                  border: '1px solid rgba(245,158,11,0.28)',
+                  background: activeStage === NEEDS_REPLY_FILTER ? 'rgba(245,158,11,0.16)' : 'rgba(245,158,11,0.07)',
+                  color: '#f59e0b',
+                  borderRadius: 999,
+                  padding: '3px 8px',
+                  fontSize: 9,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  fontFamily: MONO,
+                  letterSpacing: '0.04em',
+                }}
+              >
+                {needsReplyCount} sin responder
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Lista */}
@@ -718,13 +784,12 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
             const badge = STAGE_BADGE[stageKey] ?? STAGE_BADGE['nuevo'];
             const initial = (lead.whatsapp_display_name || lead.name || lead.phone).charAt(0).toUpperCase();
             const lastMsg = msgPreviews[lead.RecordID];
-            const seenTimestamp = seenAt[lead.RecordID];
-            const leadWrote = lastMsg?.role === 'user' &&
-              (!seenTimestamp || lastMsg.created_at > seenTimestamp);
+            const needsReply = requiresHumanReply(lead, msgPreviews);
 
             let msgPrefix = '';
             if (lastMsg?.role === 'human_agent') msgPrefix = 'Vos: ';
             else if (lastMsg?.role === 'assistant') msgPrefix = 'Sentinel: ';
+            else if (lastMsg?.role === 'user') msgPrefix = 'Cliente: ';
 
             const msgPreview = isNew
               ? 'Lead nuevo ingresado'
@@ -734,18 +799,19 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
             let leftBorder = 'transparent';
             if (isSelected)   { rowBg = 'rgba(24,93,232,0.1)';   leftBorder = '#185de8'; }
             else if (isNew)   { rowBg = 'rgba(107,221,161,0.06)'; leftBorder = '#6bdda1'; }
-            else if (leadWrote) { rowBg = 'rgba(245,158,11,0.04)'; leftBorder = '#f59e0b'; }
+            else if (needsReply) { rowBg = 'rgba(245,158,11,0.04)'; leftBorder = '#f59e0b'; }
 
             return (
               <button
                 key={lead.RecordID}
                 onClick={() => {
                   setSelectedLead(lead);
-                  if (lastMsg) {
-                    const updated = { ...seenAt, [lead.RecordID]: lastMsg.created_at };
-                    setSeenAt(updated);
-                    localStorage.setItem('scala_seen_leads', JSON.stringify(updated));
-                  }
+                  setNewLeadIds(prev => {
+                    if (!prev.has(lead.RecordID)) return prev;
+                    const next = new Set(prev);
+                    next.delete(lead.RecordID);
+                    return next;
+                  });
                 }}
                 style={{
                   width: '100%', display: 'flex', gap: 11, padding: '12px 12px',
@@ -768,7 +834,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
                   }}>
                     {initial}
                   </div>
-                  {leadWrote && !isNew && (
+                  {needsReply && !isNew && (
                     <span style={{
                       position: 'absolute', bottom: 0, right: 0,
                       width: 9, height: 9, borderRadius: '50%',
@@ -797,20 +863,30 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
                           animation: 'newBadge 1.5s ease-in-out infinite',
                         }}>NEW</span>
                       )}
-                      {!isNew && leadWrote && (
-                        <span style={{ fontSize: 8, fontWeight: 700, color: '#f59e0b', letterSpacing: '0.06em', textTransform: 'uppercase', fontFamily: MONO }}>
-                          nuevo
+                      {!isNew && needsReply && (
+                        <span style={{
+                          fontSize: 8,
+                          fontWeight: 800,
+                          color: '#000',
+                          background: '#f59e0b',
+                          borderRadius: 3,
+                          padding: '1px 5px',
+                          letterSpacing: '0.06em',
+                          textTransform: 'uppercase',
+                          fontFamily: MONO,
+                        }}>
+                          sin responder
                         </span>
                       )}
                       <span style={{ fontSize: 10, color: '#404050', fontFamily: MONO }}>
-                        {formatTime(lead.last_message_at)}
+                        {formatTime(lastMsg?.created_at || lead.last_message_at)}
                       </span>
                     </div>
                   </div>
                   <p style={{
                     fontSize: 12, margin: '0 0 5px',
-                    color: isNew ? 'rgba(107,221,161,0.6)' : leadWrote ? '#e4e4e8' : '#848484',
-                    fontWeight: leadWrote || isNew ? 500 : 400,
+                    color: isNew ? 'rgba(107,221,161,0.6)' : needsReply ? '#e4e4e8' : '#848484',
+                    fontWeight: needsReply || isNew ? 600 : 400,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
                     {msgPreview}
@@ -884,9 +960,12 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
                   setSelectedLead(toast.lead);
                   setActiveStage('all');
                   setToasts(prev => prev.filter(t => t.id !== toast.id));
-                  const updated = { ...seenAt, [toast.lead.RecordID]: toast.content };
-                  setSeenAt(updated);
-                  localStorage.setItem('scala_seen_leads', JSON.stringify(updated));
+                  setNewLeadIds(prev => {
+                    if (!prev.has(toast.lead.RecordID)) return prev;
+                    const next = new Set(prev);
+                    next.delete(toast.lead.RecordID);
+                    return next;
+                  });
                 }}
               >
                 {/* Avatar */}
