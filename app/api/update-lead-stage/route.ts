@@ -16,7 +16,7 @@ function isPausedLead(lead: Awaited<ReturnType<typeof getLeadById>>) {
   const resumeAt = lead.bot_resume_at ? new Date(lead.bot_resume_at) : null;
   const hasFutureResume = Boolean(resumeAt && Number.isFinite(resumeAt.getTime()) && resumeAt.getTime() > Date.now());
 
-  return pausedAt || hasFutureResume;
+  return hasFutureResume || (pausedAt && !lead.bot_resume_at.trim());
 }
 
 export async function POST(req: NextRequest) {
