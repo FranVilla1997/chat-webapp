@@ -1,12 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server';
-import { getPipelineStages, updateLeadFields, updateLeadStage } from '@/lib/airtable';
+import { getLeadById, getPipelineStages, updateLeadFields, updateLeadStage } from '@/lib/airtable';
 
 function normalizeStage(stage?: string) {
   const value = String(stage ?? '').trim();
   const lower = value.toLowerCase();
   if (lower === 'propuesta_enviada' || lower === 'propuesta enviada') return 'propuesta enviada';
   return lower;
+}
+
+function isPausedLead(lead: Awaited<ReturnType<typeof getLeadById>>) {
+  if (!lead) return false;
+
+  const pausedAt = Boolean(lead.bot_paused_at.trim());
+  const resumeAt = lead.bot_resume_at ? new Date(lead.bot_resume_at) : null;
+  const hasFutureResume = Boolean(resumeAt && Number.isFinite(resumeAt.getTime()) && resumeAt.getTime() > Date.now());
+
+  return pausedAt || hasFutureResume;
 }
 
 export async function POST(req: NextRequest) {
@@ -34,9 +44,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Etapa no encontrada en Airtable' }, { status: 404 });
   }
 
+  const leadBeforeUpdate = await getLeadById(recordId);
+
   await updateLeadStage(recordId, selected.id);
   if (normalizeStage(selected.name) === 'propuesta enviada' || normalizeStage(selected.displayName) === 'propuesta enviada') {
-    await updateLeadFields(recordId, { bot_can_followup: true });
+    if (!isPausedLead(leadBeforeUpdate)) {
+      await updateLeadFields(recordId, { bot_can_followup: true });
+    }
   }
 
   if (clientId) {
