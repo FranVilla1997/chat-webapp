@@ -32,10 +32,10 @@ export interface CreateSaleInput {
   paymentMethod: 'Transferencia' | 'Tarjeta' | 'Efectivo' | 'Cheque' | 'Otro';
   status?: 'Confirmada' | 'Pendiente de pago' | 'Cancelada';
   observations?: string;
-  receipt?: {
+  receipts?: {
     url: string;
     filename: string;
-  };
+  }[];
 }
 
 function getBaseUrl(source?: AirtableSource): string {
@@ -280,11 +280,11 @@ export async function createSaleRecord(input: CreateSaleInput): Promise<{ id: st
   };
 
   if (input.observations?.trim()) fields['Observaciones'] = input.observations.trim();
-  if (input.receipt) {
-    fields['Comprobante de pago'] = [{
-      url: input.receipt.url,
-      filename: input.receipt.filename,
-    }];
+  if (input.receipts?.length) {
+    fields['Comprobante de pago'] = input.receipts.map((receipt) => ({
+      url: receipt.url,
+      filename: receipt.filename,
+    }));
   }
 
   const res = await fetch(getTableUrl(salesTableId()), {

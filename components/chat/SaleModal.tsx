@@ -42,18 +42,20 @@ export function SaleModal({ open, leadId, clientId, leadPhone, leadInfo, onClose
   const [paymentMethod, setPaymentMethod] = useState('Transferencia');
   const [status, setStatus] = useState('Confirmada');
   const [observations, setObservations] = useState('');
-  const [receipt, setReceipt] = useState<File | null>(null);
+  const [receipts, setReceipts] = useState<File[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const leadName = leadInfo?.name || leadPhone;
-  const canSubmit = sellerRecordId && description.trim() && amount.trim() && purchaseDate && receipt && !submitting;
+  const canSubmit = sellerRecordId && description.trim() && amount.trim() && purchaseDate && receipts.length > 0 && !submitting;
   const receiptLabel = useMemo(() => {
-    if (!receipt) return 'Subir comprobante';
+    if (!receipts.length) return 'Subir comprobantes';
+    const receipt = receipts[0];
     const mb = receipt.size / 1024 / 1024;
+    if (receipts.length > 1) return `${receipts.length} comprobantes seleccionados`;
     return `${receipt.name} · ${mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.ceil(receipt.size / 1024)} KB`}`;
-  }, [receipt]);
+  }, [receipts]);
 
   useEffect(() => {
     if (!open) return;
@@ -64,7 +66,7 @@ export function SaleModal({ open, leadId, clientId, leadPhone, leadInfo, onClose
     setStatus('Confirmada');
     setObservations('');
     setError(null);
-    setReceipt(null);
+    setReceipts([]);
     setLoadingOptions(true);
 
     fetch('/api/sales/options')
@@ -82,7 +84,7 @@ export function SaleModal({ open, leadId, clientId, leadPhone, leadInfo, onClose
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!canSubmit || !receipt) return;
+    if (!canSubmit || !receipts.length) return;
     setSubmitting(true);
     setError(null);
 
@@ -96,7 +98,7 @@ export function SaleModal({ open, leadId, clientId, leadPhone, leadInfo, onClose
     form.set('paymentMethod', paymentMethod);
     form.set('status', status);
     form.set('observations', observations.trim());
-    form.set('receipt', receipt);
+    receipts.forEach((receipt) => form.append('receipts', receipt));
 
     try {
       const response = await fetch('/api/sales', {
@@ -202,8 +204,15 @@ export function SaleModal({ open, leadId, clientId, leadPhone, leadInfo, onClose
             <span style={labelStyle}>Comprobante de pago</span>
             <input
               type="file"
+              multiple
               accept="image/*,application/pdf"
-              onChange={(event) => setReceipt(event.target.files?.[0] ?? null)}
+              onChange={(event) => {
+                const selected = Array.from(event.target.files ?? []);
+                if (selected.length) {
+                  setReceipts((current) => [...current, ...selected]);
+                  event.currentTarget.value = '';
+                }
+              }}
               style={{ display: 'none' }}
               id="sale-receipt-input"
             />
@@ -213,11 +222,52 @@ export function SaleModal({ open, leadId, clientId, leadPhone, leadInfo, onClose
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              color: receipt ? '#F4F7FB' : '#6F7A8C',
+              color: receipts.length ? '#F4F7FB' : '#6F7A8C',
             }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{receiptLabel}</span>
               <span style={{ color: '#2563EB', fontWeight: 800 }}>Elegir</span>
             </label>
+            {receipts.length > 0 ? (
+              <div style={{ display: 'grid', gap: 7 }}>
+                {receipts.map((receipt, index) => {
+                  const mb = receipt.size / 1024 / 1024;
+                  const size = mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.ceil(receipt.size / 1024)} KB`;
+                  return (
+                    <div key={`${receipt.name}-${receipt.size}-${receipt.lastModified}-${index}`} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 10,
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      background: 'rgba(255,255,255,0.035)',
+                      borderRadius: 10,
+                      padding: '8px 10px',
+                      color: '#A4ADBD',
+                      fontSize: 12,
+                    }}>
+                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {receipt.name} <span style={{ color: '#6F7A8C' }}>- {size}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setReceipts((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                        disabled={submitting}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          color: '#FCA5A5',
+                          cursor: submitting ? 'not-allowed' : 'pointer',
+                          fontWeight: 800,
+                          padding: 0,
+                        }}
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
 
           <label style={fieldStyle}>

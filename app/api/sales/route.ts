@@ -48,7 +48,12 @@ export async function POST(req: NextRequest) {
     const paymentMethod = String(form.get('paymentMethod') ?? 'Transferencia').trim();
     const status = String(form.get('status') ?? 'Confirmada').trim();
     const amount = parseAmount(form.get('amount'));
-    const receipt = form.get('receipt');
+    const receiptEntries = form.getAll('receipts');
+    const legacyReceipt = form.get('receipt');
+    const receipts = [
+      ...receiptEntries,
+      ...(legacyReceipt ? [legacyReceipt] : []),
+    ].filter((entry): entry is File => entry instanceof File && entry.size > 0);
 
     if (!leadId || !clientId || !sellerRecordId || !description || !purchaseDate || !Number.isFinite(amount) || amount <= 0) {
       return NextResponse.json({ error: 'Faltan datos obligatorios para registrar la venta.' }, { status: 400 });
@@ -59,34 +64,41 @@ export async function POST(req: NextRequest) {
     if (!SALE_STATUSES.has(status)) {
       return NextResponse.json({ error: 'Estado de venta inválido.' }, { status: 400 });
     }
-    if (!(receipt instanceof File) || receipt.size === 0) {
+    if (!receipts.length) {
       return NextResponse.json({ error: 'El comprobante de pago es obligatorio.' }, { status: 400 });
     }
-    if (!receipt.type.startsWith('image/') && receipt.type !== 'application/pdf') {
-      return NextResponse.json({ error: 'El comprobante debe ser imagen o PDF.' }, { status: 400 });
+    if (receipts.some((receipt) => !receipt.type.startsWith('image/') && receipt.type !== 'application/pdf')) {
+      return NextResponse.json({ error: 'Los comprobantes deben ser imagen o PDF.' }, { status: 400 });
     }
-    if (receipt.size > 50 * 1024 * 1024) {
-      return NextResponse.json({ error: 'El comprobante no puede superar 50 MB.' }, { status: 400 });
+    if (receipts.some((receipt) => receipt.size > 50 * 1024 * 1024)) {
+      return NextResponse.json({ error: 'Cada comprobante no puede superar 50 MB.' }, { status: 400 });
     }
 
     await ensureBucket();
     const service = createSupabaseServiceClient();
-    const fileName = safeFileName(receipt.name || 'comprobante');
-    const storagePath = `${clientId}/${leadId}/sales/${Date.now()}-${fileName}`;
-    const bytes = Buffer.from(await receipt.arrayBuffer());
+    const uploadedReceipts = await Promise.all(receipts.map(async (receipt, index) => {
+      const fileName = safeFileName(receipt.name || 'comprobante');
+      const storagePath = `${clientId}/${leadId}/sales/${Date.now()}-${index}-${fileName}`;
+      const bytes = Buffer.from(await receipt.arrayBuffer());
 
-    const { error: uploadError } = await service.storage
-      .from(ATTACHMENTS_BUCKET)
-      .upload(storagePath, bytes, {
-        contentType: receipt.type || 'application/octet-stream',
-        upsert: false,
-      });
-    if (uploadError) throw new Error(uploadError.message);
+      const { error: uploadError } = await service.storage
+        .from(ATTACHMENTS_BUCKET)
+        .upload(storagePath, bytes, {
+          contentType: receipt.type || 'application/octet-stream',
+          upsert: false,
+        });
+      if (uploadError) throw new Error(uploadError.message);
 
-    const { data: signed, error: signedError } = await service.storage
-      .from(ATTACHMENTS_BUCKET)
-      .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS);
-    if (signedError || !signed?.signedUrl) throw new Error(signedError?.message ?? 'No se pudo preparar el comprobante.');
+      const { data: signed, error: signedError } = await service.storage
+        .from(ATTACHMENTS_BUCKET)
+        .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS);
+      if (signedError || !signed?.signedUrl) throw new Error(signedError?.message ?? 'No se pudo preparar el comprobante.');
+
+      return {
+        url: signed.signedUrl,
+        filename: fileName,
+      };
+    }));
 
     const sale = await createSaleRecord({
       leadRecordId: leadId,
@@ -97,10 +109,7 @@ export async function POST(req: NextRequest) {
       paymentMethod: paymentMethod as 'Transferencia' | 'Tarjeta' | 'Efectivo' | 'Cheque' | 'Otro',
       status: status as 'Confirmada' | 'Pendiente de pago' | 'Cancelada',
       observations,
-      receipt: {
-        url: signed.signedUrl,
-        filename: fileName,
-      },
+      receipts: uploadedReceipts,
     });
 
     const warnings: string[] = [];
