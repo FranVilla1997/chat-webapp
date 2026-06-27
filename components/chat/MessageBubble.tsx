@@ -2,16 +2,25 @@
 
 import { useEffect, useState } from 'react';
 import type { Message, MessageAttachment } from '@/lib/types';
+import type { Followup } from '@/hooks/useFollowups';
 
 interface MessageBubbleProps {
   message: Message;
   isOptimistic?: boolean;
+  followup?: Followup;
   onEdit?: (messageId: string | number, content: string) => Promise<void>;
   onDelete?: (messageId: string | number) => Promise<void>;
 }
 
 function formatTime(iso: string) {
-  return new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso));
+  return new Intl.DateTimeFormat('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(iso));
 }
 
 const MONO = `'SF Mono', 'Consolas', 'Liberation Mono', monospace`;
@@ -134,7 +143,69 @@ const messageTime: React.CSSProperties = {
   fontSize: 11,
   color: '#404050',
   fontFamily: MONO,
+  whiteSpace: 'nowrap',
 };
+
+function followupValue(value?: string | number | null) {
+  const clean = String(value ?? '').trim();
+  if (!clean) return '-';
+  return clean.replace(/_/g, ' ');
+}
+
+function FollowupDetails({ followup }: { followup: Followup }) {
+  const sentAt = followup.sent_at ? formatTime(followup.sent_at) : '';
+  const scheduledAt = followup.scheduled_at ? formatTime(followup.scheduled_at) : '';
+
+  return (
+    <details style={{
+      width: '100%',
+      border: '1px solid rgba(245,158,11,0.22)',
+      background: 'rgba(245,158,11,0.055)',
+      borderRadius: 5,
+      padding: '7px 9px',
+      color: '#d7d7df',
+      boxSizing: 'border-box',
+    }}>
+      <summary style={{
+        cursor: 'pointer',
+        color: '#f59e0b',
+        fontSize: 10,
+        fontWeight: 800,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        fontFamily: MONO,
+        listStylePosition: 'outside',
+      }}>
+        Seguimiento automatico #{followup.attempt_number} · {followupValue(followup.intent)}
+      </summary>
+      <div style={{
+        display: 'grid',
+        gap: 5,
+        marginTop: 8,
+        paddingTop: 8,
+        borderTop: '1px solid rgba(245,158,11,0.14)',
+        fontSize: 11,
+        lineHeight: 1.45,
+        color: '#a8a8b3',
+      }}>
+        <span><strong style={{ color: '#e4e4e8' }}>Etapa:</strong> {followupValue(followup.stage_name)}</span>
+        <span><strong style={{ color: '#e4e4e8' }}>Tipo:</strong> {followupValue(followup.trigger_type)} · <strong style={{ color: '#e4e4e8' }}>Tono:</strong> {followupValue(followup.tone)}</span>
+        {scheduledAt && <span><strong style={{ color: '#e4e4e8' }}>Programado:</strong> {scheduledAt}</span>}
+        {sentAt && <span><strong style={{ color: '#e4e4e8' }}>Enviado:</strong> {sentAt}</span>}
+        {followup.instructions && (
+          <span style={{ whiteSpace: 'pre-wrap' }}>
+            <strong style={{ color: '#e4e4e8' }}>Instrucciones:</strong> {followup.instructions}
+          </span>
+        )}
+        {followup.error_message && (
+          <span style={{ color: '#f87171', whiteSpace: 'pre-wrap' }}>
+            <strong>Error:</strong> {followup.error_message}
+          </span>
+        )}
+      </div>
+    </details>
+  );
+}
 
 function MessageActions({
   message,
@@ -323,7 +394,7 @@ function MessageMetaRow({
   );
 }
 
-export function MessageBubble({ message, isOptimistic, onEdit, onDelete }: MessageBubbleProps) {
+export function MessageBubble({ message, isOptimistic, followup, onEdit, onDelete }: MessageBubbleProps) {
   const { role, content, created_at, was_audio } = message;
   const hasWhatsAppKey = Boolean(message.whatsapp_message_key?.id || message.whatsapp_message_id);
   const canManage =
@@ -383,9 +454,12 @@ export function MessageBubble({ message, isOptimistic, onEdit, onDelete }: Messa
     return (
       <div style={{ display: 'flex', justifyContent: 'flex-end', opacity: isOptimistic ? 0.5 : 1 }}>
         <div style={{ maxWidth: '72%', display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
-          <span style={{ ...roleLabel, color: '#185de8', paddingRight: 2 }}>Sentinel</span>
+          <span style={{ ...roleLabel, color: followup ? '#f59e0b' : '#185de8', paddingRight: 2 }}>
+            {followup ? `Sentinel · Seguimiento #${followup.attempt_number}` : 'Sentinel'}
+          </span>
           <div style={{
             background: '#185de8',
+            border: followup ? '1px solid rgba(245,158,11,0.35)' : 'none',
             borderRadius: '6px 4px 6px 6px',
             padding: '10px 14px',
           }}>
@@ -393,6 +467,7 @@ export function MessageBubble({ message, isOptimistic, onEdit, onDelete }: Messa
             <p style={{ ...msgText, color: '#fff' }}>{content}</p>
             <Attachments attachments={message.attachments} />
           </div>
+          {followup && <FollowupDetails followup={followup} />}
           <MessageMetaRow
             align="right"
             createdAt={created_at}

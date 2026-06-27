@@ -19,6 +19,52 @@ function isPausedLead(lead: Awaited<ReturnType<typeof getLeadById>>) {
   return hasFutureResume || (pausedAt && !lead.bot_resume_at.trim());
 }
 
+function isProposalStage(stage?: string) {
+  return normalizeStage(stage) === 'propuesta enviada';
+}
+
+interface PendingFollowupRow {
+  id: number;
+  stage_name: string | null;
+}
+
+async function cancelNonProposalPendingFollowups(
+  service: ReturnType<typeof createSupabaseServiceClient>,
+  recordId: string,
+  clientId?: string,
+) {
+  let query = service
+    .from('followup_queue')
+    .select('id, stage_name')
+    .eq('lead_id', recordId)
+    .eq('status', 'pending');
+
+  if (clientId) query = query.eq('client_id', clientId);
+
+  const { data, error } = await query.returns<PendingFollowupRow[]>();
+  if (error) throw new Error(error.message);
+
+  const staleIds = (data ?? [])
+    .filter((row) => !isProposalStage(row.stage_name ?? ''))
+    .map((row) => row.id)
+    .filter((id) => Number.isFinite(id));
+
+  if (!staleIds.length) return 0;
+
+  const { data: cancelled, error: updateError } = await service
+    .from('followup_queue')
+    .update({
+      status: 'cancelled',
+      cancel_reason: 'Cambio a Propuesta enviada: reemplazado por seguimiento de presupuesto.',
+      error_message: null,
+    })
+    .in('id', staleIds)
+    .select('id');
+
+  if (updateError) throw new Error(updateError.message);
+  return cancelled?.length ?? 0;
+}
+
 export async function POST(req: NextRequest) {
   const supabase = createSupabaseServerClient();
   const { data: { session } } = await supabase.auth.getSession();
@@ -45,16 +91,20 @@ export async function POST(req: NextRequest) {
   }
 
   const leadBeforeUpdate = await getLeadById(recordId);
+  const service = createSupabaseServiceClient();
+  const selectedIsProposal = isProposalStage(selected.name) || isProposalStage(selected.displayName);
 
   await updateLeadStage(recordId, selected.id);
-  if (normalizeStage(selected.name) === 'propuesta enviada' || normalizeStage(selected.displayName) === 'propuesta enviada') {
+  if (selectedIsProposal) {
+    const proposalBotFields: Record<string, unknown> = { bot_can_reply: false };
     if (!isPausedLead(leadBeforeUpdate)) {
-      await updateLeadFields(recordId, { bot_can_followup: true });
+      proposalBotFields.bot_can_followup = true;
     }
+    await updateLeadFields(recordId, proposalBotFields);
+    await cancelNonProposalPendingFollowups(service, recordId, clientId);
   }
 
   if (clientId) {
-    const service = createSupabaseServiceClient();
     const now = new Date().toISOString();
     const event = {
       type: 'stage_updated',

@@ -1,12 +1,21 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { LeadInfo } from '@/lib/types';
+import type { LeadInfo, MessageAttachment } from '@/lib/types';
 import type { Followup } from '@/hooks/useFollowups';
+
+interface QuoteInChat {
+  sentAt: string;
+  messageId: string | number;
+  fileName?: string;
+  quoteUrl?: string;
+  attachment?: MessageAttachment;
+}
 
 interface LeadPanelProps {
   lead: LeadInfo;
   followups: Followup[];
+  quoteInChat?: QuoteInChat | null;
   open: boolean;
   onClose: () => void;
   onStageChange?: (stageId: string) => Promise<{ name: string; displayName: string }>;
@@ -221,9 +230,162 @@ function Pill({ children, color }: { children: React.ReactNode; color: string })
   );
 }
 
-export function LeadPanel({ lead, followups, open, onClose, onStageChange, onCancelFollowups }: LeadPanelProps) {
+function SignedQuoteButton({ attachment }: { attachment: MessageAttachment }) {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function openPdf() {
+    if (signedUrl) {
+      window.open(signedUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/message-attachments/${attachment.id}/signed-url`);
+      const result = await response.json().catch(() => ({})) as { url?: string; error?: string };
+      if (!response.ok || !result.url) throw new Error(result.error ?? 'No se pudo abrir el PDF');
+      setSignedUrl(result.url);
+      window.open(result.url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo abrir el PDF');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => void openPdf()}
+        disabled={loading}
+        style={{
+          border: '1px solid rgba(24,93,232,0.35)',
+          background: 'rgba(24,93,232,0.12)',
+          color: '#88adea',
+          borderRadius: 4,
+          padding: '7px 10px',
+          fontSize: 11,
+          fontWeight: 800,
+          cursor: loading ? 'not-allowed' : 'pointer',
+          fontFamily: MONO,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+          opacity: loading ? 0.65 : 1,
+        }}
+      >
+        {loading ? 'Abriendo...' : 'Abrir PDF'}
+      </button>
+      {error && <span style={{ fontSize: 10, color: '#f87171', lineHeight: 1.4 }}>{error}</span>}
+    </>
+  );
+}
+
+function QuoteStatusCard({ quote, isProposalStage }: { quote?: QuoteInChat | null; isProposalStage: boolean }) {
+  const hasQuote = Boolean(quote);
+  const hasAttachment = Boolean(quote?.attachment);
+  const statusColor = hasAttachment ? '#6bdda1' : hasQuote ? '#f59e0b' : isProposalStage ? '#f59e0b' : '#404050';
+  const statusText = hasAttachment
+    ? 'Presupuesto en chat'
+    : hasQuote
+      ? 'Registro sin PDF adjunto'
+      : isProposalStage
+        ? 'Sin presupuesto adjunto'
+        : 'Sin presupuesto enviado';
+
+  return (
+    <div style={{
+      borderRadius: 6,
+      border: `1px solid ${hasAttachment ? 'rgba(107,221,161,0.22)' : isProposalStage || hasQuote ? 'rgba(245,158,11,0.22)' : '#1e1e2a'}`,
+      background: hasAttachment
+        ? 'rgba(107,221,161,0.055)'
+        : isProposalStage || hasQuote
+          ? 'rgba(245,158,11,0.055)'
+          : 'rgba(18,18,26,0.75)',
+      padding: '11px 12px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 9,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <Label>Presupuesto</Label>
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 5,
+          fontSize: 9,
+          fontWeight: 800,
+          color: statusColor,
+          fontFamily: MONO,
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+          whiteSpace: 'nowrap',
+        }}>
+          <span style={{ width: 6, height: 6, borderRadius: 99, background: statusColor }} />
+          {hasAttachment ? 'PDF' : hasQuote ? 'Link' : 'Falta'}
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gap: 4 }}>
+        <p style={{ margin: 0, color: '#e4e4e8', fontSize: 12.5, lineHeight: 1.35, fontWeight: 700 }}>
+          {statusText}
+        </p>
+        {quote ? (
+          <>
+            <span style={{ color: '#848484', fontSize: 11, lineHeight: 1.45, wordBreak: 'break-word' }}>
+              {quote.fileName || 'Presupuesto Roller Cheaper'}
+            </span>
+            <span style={{ color: '#404050', fontSize: 10, fontFamily: MONO }}>
+              Enviado {formatDate(quote.sentAt)}
+            </span>
+          </>
+        ) : (
+          <span style={{ color: '#848484', fontSize: 11, lineHeight: 1.45 }}>
+            {isProposalStage
+              ? 'La etapa esta en propuesta, pero no hay PDF de presupuesto registrado en este chat.'
+              : 'Cuando se envie desde Quotes, el PDF aparecera aca.'}
+          </span>
+        )}
+      </div>
+
+      {quote && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+          {quote.attachment && <SignedQuoteButton attachment={quote.attachment} />}
+          {quote.quoteUrl && (
+            <a
+              href={quote.quoteUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                border: '1px solid #2a2a38',
+                background: '#12121a',
+                color: '#e4e4e8',
+                borderRadius: 4,
+                padding: '7px 10px',
+                fontSize: 11,
+                fontWeight: 800,
+                textDecoration: 'none',
+                fontFamily: MONO,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Abrir Quotes
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function LeadPanel({ lead, followups, quoteInChat, open, onClose, onStageChange, onCancelFollowups }: LeadPanelProps) {
   const phone = formatPhone(lead.phone);
   const stageBadge = lead.stage ? getStageBadge(lead.stage) : null;
+  const isLeadProposalStage = normalizeStageKey(lead.stage) === PROPOSAL_STAGE;
   const pending = followups.filter(f => f.status === 'pending');
   const rest    = followups.filter(f => f.status !== 'pending');
   const [stages, setStages] = useState<StageOption[]>([]);
@@ -373,6 +535,9 @@ export function LeadPanel({ lead, followups, open, onClose, onStageChange, onCan
             </div>
           )}
         </div>
+
+        <Divider />
+        <QuoteStatusCard quote={quoteInChat} isProposalStage={isLeadProposalStage} />
 
         {/* Fields */}
         {lead.fields && lead.fields.length > 0 && (

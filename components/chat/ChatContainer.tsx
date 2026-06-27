@@ -5,14 +5,14 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { useMessages } from '@/hooks/useMessages';
 import { useSendMessage } from '@/hooks/useSendMessage';
-import { useFollowups } from '@/hooks/useFollowups';
+import { useFollowups, type Followup } from '@/hooks/useFollowups';
 import { ChatHeader } from './ChatHeader';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { LeadPanel } from './LeadPanel';
 import { BotPauseControl } from './BotPauseControl';
 import { SaleModal } from './SaleModal';
-import type { LeadInfo, Message } from '@/lib/types';
+import type { LeadInfo, Message, MessageAttachment } from '@/lib/types';
 
 interface ChatContainerProps {
   leadPhone: string;
@@ -46,6 +46,17 @@ type SentinelEvent = {
 type ChatTimelineItem =
   | { kind: 'message'; message: Message }
   | { kind: 'event'; event: SentinelEvent };
+
+export interface QuoteInChat {
+  sentAt: string;
+  messageId: string | number;
+  fileName?: string;
+  quoteUrl?: string;
+  attachment?: MessageAttachment;
+}
+
+const FOLLOWUP_MESSAGE_MATCH_WINDOW_MS = 3 * 60 * 1000;
+const QUOTE_URL_PATTERN = /https?:\/\/\S*\/quotes\/[A-Za-z0-9-]+/i;
 
 function friendlySendError(error: string) {
   const lower = error.toLowerCase();
@@ -275,7 +286,13 @@ function normalizeStageLabel(value?: string) {
 
 function formatEventTime(value: string) {
   if (!isValidDate(value)) return '';
-  return new Date(value).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  return new Date(value).toLocaleString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function actorLabel(actor: SentinelEvent['actor']) {
@@ -427,6 +444,93 @@ function timelineTime(item: ChatTimelineItem) {
   return new Date(value).getTime();
 }
 
+function mapSentFollowupsToMessages(messages: Message[], followups: Followup[]) {
+  const sentFollowups = followups
+    .filter((followup) => followup.status === 'sent' && isValidDate(followup.sent_at ?? ''))
+    .sort((a, b) => new Date(a.sent_at!).getTime() - new Date(b.sent_at!).getTime());
+
+  const assistantMessages = messages
+    .filter((message) => message.role === 'assistant' && isValidDate(message.created_at))
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+  const matches = new Map<string, Followup>();
+  const usedMessageIds = new Set<string>();
+
+  for (const followup of sentFollowups) {
+    const sentAt = new Date(followup.sent_at!).getTime();
+    let bestMessage: Message | null = null;
+    let bestDiff = Number.POSITIVE_INFINITY;
+
+    for (const message of assistantMessages) {
+      const messageId = String(message.id);
+      if (usedMessageIds.has(messageId)) continue;
+
+      const diff = Math.abs(new Date(message.created_at).getTime() - sentAt);
+      if (diff <= FOLLOWUP_MESSAGE_MATCH_WINDOW_MS && diff < bestDiff) {
+        bestMessage = message;
+        bestDiff = diff;
+      }
+    }
+
+    if (bestMessage) {
+      const messageId = String(bestMessage.id);
+      matches.set(messageId, followup);
+      usedMessageIds.add(messageId);
+    }
+  }
+
+  return matches;
+}
+
+function isQuoteAttachment(attachment: MessageAttachment) {
+  const haystack = [
+    attachment.file_name,
+    attachment.caption,
+    attachment.mime_type,
+    attachment.storage_path,
+  ].join(' ').toLowerCase();
+
+  return (
+    attachment.media_type === 'document' &&
+    (haystack.includes('presupuesto') || haystack.includes('roller-cheaper') || haystack.includes('application/pdf'))
+  );
+}
+
+function extractQuoteUrl(content?: string) {
+  const match = String(content ?? '').match(QUOTE_URL_PATTERN);
+  return match?.[0]?.replace(/[),.;]+$/, '');
+}
+
+function findQuoteInChat(messages: Message[]): QuoteInChat | null {
+  const candidates: QuoteInChat[] = [];
+
+  for (const message of messages) {
+    const attachments = message.attachments ?? [];
+    const quoteAttachment = attachments.find(isQuoteAttachment);
+    const quoteUrl = extractQuoteUrl(message.content);
+    const contentLooksLikeQuote = /presupuesto\s+enviado/i.test(message.content) || Boolean(quoteUrl);
+
+    if (!quoteAttachment && !contentLooksLikeQuote) continue;
+
+    const inferredFileName = String(message.content ?? '')
+      .split('\n')[0]
+      ?.replace(/^Presupuesto enviado:\s*/i, '')
+      .trim();
+
+    candidates.push({
+      sentAt: message.created_at,
+      messageId: message.id,
+      fileName: quoteAttachment?.file_name ?? (inferredFileName || undefined),
+      quoteUrl,
+      attachment: quoteAttachment,
+    });
+  }
+
+  candidates.sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+
+  return candidates[0] ?? null;
+}
+
 function SentinelEventCard({ event }: { event: SentinelEvent }) {
   const [expanded, setExpanded] = useState(false);
   const time = formatEventTime(event.createdAt);
@@ -497,7 +601,7 @@ function SentinelEventCard({ event }: { event: SentinelEvent }) {
             maxWidth: 440,
           }}>
             <span style={{ display: 'block', marginBottom: 8, color: '#a8a8b3', fontSize: 11 }}>
-              Actor: {actor}{time ? ` - Hora: ${time}` : ''}
+              Actor: {actor}{time ? ` - Fecha: ${time}` : ''}
             </span>
             {event.body}
             {event.actor === 'sentinel' && event.reason && (
@@ -678,6 +782,11 @@ export function ChatContainer({
   const systemEvents = useMemo(() => messages
     .filter((message) => message.role === 'system')
     .map(parseSystemMessageAsEvent), [messages]);
+  const followupByMessageId = useMemo(
+    () => mapSentFollowupsToMessages(messages, followups),
+    [messages, followups]
+  );
+  const quoteInChat = useMemo(() => findQuoteInChat(messages), [messages]);
   const visibleSentinelEvents = useMemo(() => {
     const covered = new Set(systemEvents.map((event) => event.category));
     return sentinelEvents.filter((event) => !covered.has(event.category));
@@ -983,6 +1092,7 @@ export function ChatContainer({
                   key={item.message.id}
                   message={item.message}
                   isOptimistic={String(item.message.id).startsWith('temp-')}
+                  followup={followupByMessageId.get(String(item.message.id))}
                   onEdit={handleEditMessage}
                   onDelete={handleDeleteMessage}
                 />
@@ -1016,6 +1126,7 @@ export function ChatContainer({
           <LeadPanel
             lead={{ ...enrichedLeadInfo, phone: leadPhone }}
             followups={followups}
+            quoteInChat={quoteInChat}
             open={effectivePanelOpen}
             onClose={() => setPanelOpen(false)}
             onStageChange={handleChangeStage}
