@@ -37,14 +37,71 @@ function AudioBadge() {
   );
 }
 
+type AttachmentDisplayType = 'audio' | 'image' | 'video' | 'document';
+
+function attachmentExtension(attachment: MessageAttachment) {
+  return attachment.file_name?.split('.').pop()?.toLowerCase() ?? '';
+}
+
+function getAttachmentDisplayType(attachment: MessageAttachment): AttachmentDisplayType {
+  const mimeType = String(attachment.mime_type ?? '').toLowerCase();
+  const extension = attachmentExtension(attachment);
+
+  if (attachment.media_type === 'audio' || mimeType.startsWith('audio/') || ['ogg', 'oga', 'mp3', 'm4a', 'wav'].includes(extension)) return 'audio';
+  if (attachment.media_type === 'image' || mimeType.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'].includes(extension)) return 'image';
+  if (attachment.media_type === 'video' || mimeType.startsWith('video/') || ['mp4', 'm4v', 'mov', 'webm', 'ogv'].includes(extension)) return 'video';
+  return 'document';
+}
+
+function FileOpenCard({ url, attachment, reason }: { url: string; attachment: MessageAttachment; reason?: string }) {
+  return (
+    <div style={{
+      marginTop: 8,
+      border: '1px solid rgba(255,255,255,0.1)',
+      background: 'rgba(0,0,0,0.18)',
+      borderRadius: 6,
+      padding: '9px 10px',
+      display: 'grid',
+      gap: 7,
+      maxWidth: 320,
+    }}>
+      <span style={{ color: '#e4e4e8', fontSize: 12, lineHeight: 1.35, wordBreak: 'break-word' }}>
+        {attachment.file_name || 'Archivo recibido'}
+      </span>
+      {reason && <span style={{ color: '#848484', fontSize: 11, lineHeight: 1.35 }}>{reason}</span>}
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        style={{
+          justifySelf: 'start',
+          border: '1px solid rgba(136,173,234,0.35)',
+          background: 'rgba(24,93,232,0.12)',
+          color: '#88adea',
+          borderRadius: 4,
+          padding: '6px 9px',
+          fontSize: 11,
+          fontWeight: 700,
+          textDecoration: 'none',
+        }}
+      >
+        Abrir archivo
+      </a>
+    </div>
+  );
+}
+
 function AttachmentViewer({ attachment }: { attachment: MessageAttachment }) {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [renderFailed, setRenderFailed] = useState(false);
+  const displayType = getAttachmentDisplayType(attachment);
 
   useEffect(() => {
     let alive = true;
     setUrl(null);
     setError(null);
+    setRenderFailed(false);
 
     fetch(`/api/message-attachments/${attachment.id}/signed-url`)
       .then(async (res) => {
@@ -66,51 +123,65 @@ function AttachmentViewer({ attachment }: { attachment: MessageAttachment }) {
     return <p style={{ margin: '8px 0 0', color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>Cargando archivo...</p>;
   }
 
-  if (attachment.media_type === 'audio') {
+  if (renderFailed) {
     return (
-      <audio
-        controls
-        preload="metadata"
-        src={url}
-        style={{ display: 'block', width: 'min(280px, 100%)', marginTop: 8 }}
+      <FileOpenCard
+        url={url}
+        attachment={attachment}
+        reason="No se pudo previsualizar en el navegador, pero podés abrir el archivo."
       />
     );
   }
 
-  if (attachment.media_type === 'image') {
+  if (displayType === 'audio') {
+    return (
+      <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+        <audio
+          controls
+          preload="metadata"
+          src={url}
+          onError={() => setRenderFailed(true)}
+          style={{ display: 'block', width: 'min(280px, 100%)' }}
+        />
+        <a href={url} target="_blank" rel="noreferrer" style={{ color: '#88adea', fontSize: 11, textDecoration: 'none' }}>
+          Abrir audio
+        </a>
+      </div>
+    );
+  }
+
+  if (displayType === 'image') {
     return (
       <a href={url} target="_blank" rel="noreferrer" style={{ display: 'block', marginTop: 8 }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={url}
           alt={attachment.caption || attachment.file_name || 'Imagen enviada'}
+          onError={() => setRenderFailed(true)}
           style={{ display: 'block', maxWidth: 280, maxHeight: 260, borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)', objectFit: 'cover' }}
         />
       </a>
     );
   }
 
-  if (attachment.media_type === 'video') {
+  if (displayType === 'video') {
     return (
-      <video
-        controls
-        preload="metadata"
-        src={url}
-        style={{ display: 'block', maxWidth: 320, width: '100%', maxHeight: 260, marginTop: 8, borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)' }}
-      />
+      <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+        <video
+          controls
+          preload="metadata"
+          src={url}
+          onError={() => setRenderFailed(true)}
+          style={{ display: 'block', maxWidth: 320, width: '100%', maxHeight: 260, borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)' }}
+        />
+        <a href={url} target="_blank" rel="noreferrer" style={{ color: '#88adea', fontSize: 11, textDecoration: 'none' }}>
+          Abrir video
+        </a>
+      </div>
     );
   }
 
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      style={{ display: 'inline-flex', marginTop: 8, color: '#88adea', fontSize: 12, textDecoration: 'none' }}
-    >
-      Ver archivo: {attachment.file_name}
-    </a>
-  );
+  return <FileOpenCard url={url} attachment={attachment} />;
 }
 
 function Attachments({ attachments }: { attachments?: MessageAttachment[] }) {

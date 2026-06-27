@@ -160,12 +160,23 @@ export function useMessages(leadId: string, clientId: string) {
             String(attachment.lead_id) === String(leadId) &&
             String(attachment.client_id) === String(clientId)
           ) {
-            setMessages((prev) => prev.map((message) => {
-              if (messageId(message) !== attachment.message_id) return message;
-              const current = message.attachments ?? [];
-              if (current.some((item) => item.id === attachment.id)) return message;
-              return { ...message, attachments: [...current, attachment] };
-            }));
+            setMessages((prev) => {
+              let changed = false;
+              const next = prev.map((message) => {
+                if (messageId(message) !== attachment.message_id) return message;
+                const current = message.attachments ?? [];
+                if (current.some((item) => item.id === attachment.id)) return message;
+                changed = true;
+                return { ...message, attachments: [...current, attachment] };
+              });
+
+              if (!changed) return prev;
+              fingerprintRef.current = fingerprint(next);
+              return next;
+            });
+            window.setTimeout(() => {
+              void fetchMessages();
+            }, 500);
           }
         }
       )

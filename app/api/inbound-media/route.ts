@@ -28,9 +28,10 @@ function safeFileName(name: string) {
 }
 
 function mediaTypeFromMime(mimeType: string): MessageAttachmentMediaType {
-  if (mimeType.startsWith('audio/')) return 'audio';
-  if (mimeType.startsWith('image/')) return 'image';
-  if (mimeType.startsWith('video/')) return 'video';
+  const normalized = mimeType.toLowerCase();
+  if (normalized.startsWith('audio/')) return 'audio';
+  if (normalized.startsWith('image/')) return 'image';
+  if (normalized.startsWith('video/')) return 'video';
   return 'document';
 }
 
@@ -38,9 +39,59 @@ function normalizeMediaType(value: string | undefined, mimeType: string): Messag
   const normalized = (value ?? '').toLowerCase();
   if (normalized.includes('audio')) return 'audio';
   if (normalized.includes('image') || normalized.includes('foto')) return 'image';
+  if (normalized.includes('sticker')) return 'image';
   if (normalized.includes('video')) return 'video';
+  if (normalized.includes('ptv')) return 'video';
   if (normalized.includes('document') || normalized.includes('file') || normalized.includes('archivo')) return 'document';
   return mediaTypeFromMime(mimeType);
+}
+
+function mimeTypeFromFileName(fileName?: string): string | undefined {
+  const extension = fileName?.split('.').pop()?.toLowerCase();
+  if (!extension) return undefined;
+
+  const byExtension: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    heic: 'image/heic',
+    heif: 'image/heif',
+    mp4: 'video/mp4',
+    m4v: 'video/mp4',
+    mov: 'video/quicktime',
+    webm: 'video/webm',
+    ogv: 'video/ogg',
+    ogg: 'audio/ogg',
+    oga: 'audio/ogg',
+    mp3: 'audio/mpeg',
+    m4a: 'audio/mp4',
+    wav: 'audio/wav',
+    pdf: 'application/pdf',
+  };
+
+  return byExtension[extension];
+}
+
+function defaultMimeType(mediaType: MessageAttachmentMediaType): string {
+  if (mediaType === 'audio') return 'audio/ogg';
+  if (mediaType === 'image') return 'image/jpeg';
+  if (mediaType === 'video') return 'video/mp4';
+  return 'application/octet-stream';
+}
+
+function normalizeMimeType(rawMimeType: string | undefined, mediaType: MessageAttachmentMediaType, fileName?: string): string {
+  const clean = String(rawMimeType ?? '').trim().toLowerCase();
+  const isGeneric =
+    !clean ||
+    clean === 'application/octet-stream' ||
+    clean === 'binary/octet-stream' ||
+    clean === 'octet-stream' ||
+    clean === 'unknown';
+
+  if (!isGeneric) return clean;
+  return mimeTypeFromFileName(fileName) ?? defaultMimeType(mediaType);
 }
 
 function defaultContent(mediaType: MessageAttachmentMediaType, caption?: string) {
@@ -58,7 +109,7 @@ async function ensureBucket() {
     await supabase.storage.updateBucket(ATTACHMENTS_BUCKET, {
       public: false,
       fileSizeLimit: 50 * 1024 * 1024,
-      allowedMimeTypes: ['audio/*', 'image/*', 'video/*', 'application/pdf'],
+      allowedMimeTypes: ['audio/*', 'image/*', 'video/*', 'application/pdf', 'application/octet-stream'],
     });
     return;
   }
@@ -66,7 +117,7 @@ async function ensureBucket() {
   await supabase.storage.createBucket(ATTACHMENTS_BUCKET, {
     public: false,
     fileSizeLimit: 50 * 1024 * 1024,
-    allowedMimeTypes: ['audio/*', 'image/*', 'video/*', 'application/pdf'],
+    allowedMimeTypes: ['audio/*', 'image/*', 'video/*', 'application/pdf', 'application/octet-stream'],
   });
 }
 
@@ -97,8 +148,9 @@ export async function POST(req: NextRequest) {
   try {
     const payload = await req.json() as InboundMediaPayload;
     const { leadId, clientId } = payload;
-    const mimeType = payload.mimeType ?? 'application/octet-stream';
-    const mediaType = normalizeMediaType(payload.mediaType, mimeType);
+    const initialMimeType = payload.mimeType ?? mimeTypeFromFileName(payload.fileName) ?? '';
+    const mediaType = normalizeMediaType(payload.mediaType, initialMimeType);
+    const mimeType = normalizeMimeType(payload.mimeType, mediaType, payload.fileName);
     const fileName = safeFileName(payload.fileName ?? `${mediaType}-${Date.now()}`);
 
     if (!leadId || !clientId) {
