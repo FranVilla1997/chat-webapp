@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServiceClient } from '@/lib/supabase-server';
+import { updateLeadFields } from '@/lib/airtable';
+import { cancelPendingFollowupsForLead } from '@/lib/followup-queue';
+import { isTerminalStage } from '@/lib/stage-rules';
 
 export async function POST(req: NextRequest) {
   const secret = req.headers.get('x-webhook-secret');
@@ -48,6 +51,26 @@ export async function POST(req: NextRequest) {
   if (error) {
     console.error('lead_notifications insert error:', error);
     return NextResponse.json({ error: 'DB error' }, { status: 500 });
+  }
+
+  const actionType = body.event_type || action;
+  if (actionType === 'stage_updated' && isTerminalStage(body.stage)) {
+    try {
+      await updateLeadFields(record_id, {
+        bot_can_reply: false,
+        bot_can_followup: false,
+        bot_paused_at: null,
+        bot_resume_at: null,
+        bot_paused_by: '',
+      });
+      await cancelPendingFollowupsForLead({
+        leadId: record_id,
+        clientId: client_id,
+        reason: `Etapa cerrada (${body.stage}): no corresponde seguimiento automatico.`,
+      });
+    } catch (err) {
+      console.error('terminal stage bot cleanup failed:', err);
+    }
   }
 
   const eventMessage = body.event_message || body.message || buildEventMessage(body);

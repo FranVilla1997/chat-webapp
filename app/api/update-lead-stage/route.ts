@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server';
 import { getLeadById, getPipelineStages, updateLeadFields, updateLeadStage } from '@/lib/airtable';
+import { cancelPendingFollowupsForLead } from '@/lib/followup-queue';
+import { isProposalStage, isTerminalStage, normalizePipelineStage } from '@/lib/stage-rules';
 
 function normalizeStage(stage?: string) {
-  const value = String(stage ?? '').trim();
-  const lower = value.toLowerCase();
-  if (lower === 'propuesta_enviada' || lower === 'propuesta enviada') return 'propuesta enviada';
-  return lower;
+  return normalizePipelineStage(stage);
 }
 
 function isPausedLead(lead: Awaited<ReturnType<typeof getLeadById>>) {
@@ -17,10 +16,6 @@ function isPausedLead(lead: Awaited<ReturnType<typeof getLeadById>>) {
   const hasFutureResume = Boolean(resumeAt && Number.isFinite(resumeAt.getTime()) && resumeAt.getTime() > Date.now());
 
   return hasFutureResume || (pausedAt && !lead.bot_resume_at.trim());
-}
-
-function isProposalStage(stage?: string) {
-  return normalizeStage(stage) === 'propuesta enviada';
 }
 
 interface PendingFollowupRow {
@@ -93,9 +88,23 @@ export async function POST(req: NextRequest) {
   const leadBeforeUpdate = await getLeadById(recordId);
   const service = createSupabaseServiceClient();
   const selectedIsProposal = isProposalStage(selected.name) || isProposalStage(selected.displayName);
+  const selectedIsTerminal = isTerminalStage(selected.name) || isTerminalStage(selected.displayName);
 
   await updateLeadStage(recordId, selected.id);
-  if (selectedIsProposal) {
+  if (selectedIsTerminal) {
+    await updateLeadFields(recordId, {
+      bot_can_reply: false,
+      bot_can_followup: false,
+      bot_paused_at: null,
+      bot_resume_at: null,
+      bot_paused_by: '',
+    });
+    await cancelPendingFollowupsForLead({
+      leadId: recordId,
+      clientId,
+      reason: `Etapa cerrada (${selected.displayName}): no corresponde seguimiento automatico.`,
+    });
+  } else if (selectedIsProposal) {
     const proposalBotFields: Record<string, unknown> = { bot_can_reply: false };
     if (!isPausedLead(leadBeforeUpdate)) {
       proposalBotFields.bot_can_followup = true;

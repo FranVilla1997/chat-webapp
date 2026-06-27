@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
-import { updateLeadFields } from '@/lib/airtable';
+import { getLeadById, updateLeadFields } from '@/lib/airtable';
+import { isTerminalStage } from '@/lib/stage-rules';
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,6 +16,24 @@ export async function POST(req: NextRequest) {
     };
     if (!recordId) {
       return NextResponse.json({ error: 'Missing recordId' }, { status: 400 });
+    }
+
+    const lead = await getLeadById(recordId, {
+      baseId: airtableBaseId,
+      tableId: airtableTableId,
+    });
+    if (isTerminalStage(lead?.current_stage)) {
+      await updateLeadFields(recordId, {
+        bot_can_reply: false,
+        bot_can_followup: false,
+        bot_paused_at: null,
+        bot_resume_at: null,
+        bot_paused_by: '',
+      }, {
+        baseId: airtableBaseId,
+        tableId: airtableTableId,
+      });
+      return NextResponse.json({ error: 'El lead esta cerrado. No corresponde reanudar el bot ni los seguimientos.' }, { status: 409 });
     }
 
     await updateLeadFields(recordId, {

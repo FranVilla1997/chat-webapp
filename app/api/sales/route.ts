@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server';
 import { createSaleRecord, getPipelineStages, updateLeadFields, updateLeadStage } from '@/lib/airtable';
+import { cancelPendingFollowupsForLead } from '@/lib/followup-queue';
 
 const ATTACHMENTS_BUCKET = 'chat-attachments';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
@@ -127,6 +128,18 @@ export async function POST(req: NextRequest) {
       const wonStage = stages.find((stage) => stage.name === 'cerrado_ganado');
       if (!wonStage) throw new Error('No se encontró la etapa cerrado_ganado.');
       await updateLeadStage(leadId, wonStage.id);
+      await updateLeadFields(leadId, {
+        bot_can_reply: false,
+        bot_can_followup: false,
+        bot_paused_at: null,
+        bot_resume_at: null,
+        bot_paused_by: '',
+      });
+      await cancelPendingFollowupsForLead({
+        leadId,
+        clientId,
+        reason: 'Venta registrada: lead cerrado ganado, seguimiento automatico cancelado.',
+      });
       const { error: notificationError } = await service.from('lead_notifications').insert({
         record_id: leadId,
         client_id: clientId,
