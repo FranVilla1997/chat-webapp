@@ -257,11 +257,16 @@ export async function getAirtableSellers(): Promise<AirtableSeller[]> {
       offset?: string;
     };
 
-    sellers.push(...data.records.map((record) => ({
-      id: record.id,
-      name: String(record.fields['Nombre'] ?? ''),
-      active: Boolean(record.fields['Activo']),
-    })).filter((seller) => seller.name));
+    sellers.push(...data.records.map((record) => {
+      const checkboxActive = record.fields['Activo'];
+      const status = String(record.fields['Estado'] ?? '').trim().toLowerCase();
+
+      return {
+        id: record.id,
+        name: String(record.fields['Nombre'] ?? ''),
+        active: Boolean(checkboxActive) || status === 'activo',
+      };
+    }).filter((seller) => seller.name));
     offset = data.offset;
   } while (offset);
 
