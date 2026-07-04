@@ -143,3 +143,25 @@ export interface AirtableLead {
   notes: string;
   created_at: string;
 }
+
+export interface AirtableSaleAttachment {
+  id?: string;
+  url: string;
+  filename: string;
+  type?: string;
+}
+
+export interface AirtableSale {
+  id: string;
+  createdTime: string;
+  description: string;
+  amount: number;
+  purchaseDate: string;
+  registeredAt: string;
+  paymentMethod: string;
+  status: string;
+  sellerName: string;
+  leadRecordIds: string[];
+  receipts: AirtableSaleAttachment[];
+  observations: string;
+}

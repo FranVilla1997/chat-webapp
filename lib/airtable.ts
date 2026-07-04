@@ -1,4 +1,4 @@
-import type { AirtableLead } from './types';
+import type { AirtableLead, AirtableSale, AirtableSaleAttachment } from './types';
 
 const HEADERS = {
   Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}`,
@@ -82,6 +82,40 @@ function normalizeStageName(stage?: string): string {
   return value;
 }
 
+function escapeAirtableFormulaValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function extractLinkedIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item)).filter(Boolean);
+}
+
+function extractSaleAttachments(value: unknown): AirtableSaleAttachment[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const attachment = item as Record<string, unknown>;
+    const url = String(attachment.url ?? '');
+    if (!url) return [];
+
+    return [{
+      id: attachment.id ? String(attachment.id) : undefined,
+      url,
+      filename: String(attachment.filename ?? 'comprobante'),
+      type: attachment.type ? String(attachment.type) : undefined,
+    }];
+  });
+}
+
+function saleTimestamp(sale: Pick<AirtableSale, 'purchaseDate' | 'registeredAt' | 'createdTime'>): number {
+  const source = sale.purchaseDate || sale.registeredAt || sale.createdTime;
+  if (!source) return 0;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(source)) return new Date(`${source}T12:00:00Z`).getTime();
+  return new Date(source).getTime() || 0;
+}
+
 function mapRecord(record: { id: string; fields: Record<string, unknown> }): AirtableLead {
   const f = record.fields;
   return {
@@ -137,6 +171,24 @@ function mapRecord(record: { id: string; fields: Record<string, unknown> }): Air
   };
 }
 
+function mapSaleRecord(record: { id: string; createdTime?: string; fields: Record<string, unknown> }, sellerName: string): AirtableSale {
+  const f = record.fields;
+  return {
+    id: record.id,
+    createdTime: String(record.createdTime ?? ''),
+    description: String(f['Descripción'] ?? ''),
+    amount: Number(f['Monto de la venta'] ?? 0),
+    purchaseDate: String(f['Fecha de compra'] ?? ''),
+    registeredAt: String(f['Fecha de registro'] ?? ''),
+    paymentMethod: String(f['Método de pago'] ?? ''),
+    status: String(f['Estado de la venta'] ?? ''),
+    sellerName,
+    leadRecordIds: extractLinkedIds(f['Lead cerrado']),
+    receipts: extractSaleAttachments(f['Comprobante de pago']),
+    observations: String(f['Observaciones'] ?? ''),
+  };
+}
+
 export async function getLeadsBySellerName(sellerName: string, source?: AirtableSource): Promise<AirtableLead[]> {
   const leads: AirtableLead[] = [];
   let offset: string | undefined;
@@ -189,6 +241,31 @@ export async function getLeadById(recordId: string, source?: AirtableSource): Pr
   if (!res.ok) throw new Error(`Airtable error: ${res.status}`);
   const data = await res.json() as { id: string; fields: Record<string, unknown> };
   return mapRecord(data);
+}
+
+export async function getSalesBySellerName(sellerName: string): Promise<AirtableSale[]> {
+  const sales: AirtableSale[] = [];
+  let offset: string | undefined;
+  const baseUrl = getTableUrl(salesTableId());
+  const formula = encodeURIComponent(`{Vendedor responsable}="${escapeAirtableFormulaValue(sellerName)}"`);
+
+  do {
+    let url = `${baseUrl}?filterByFormula=${formula}&pageSize=100`;
+    if (offset) url += `&offset=${offset}`;
+
+    const res = await fetch(url, { headers: HEADERS, cache: 'no-store' });
+    if (!res.ok) throw new Error(`Airtable sales error: ${res.status} ${await res.text()}`);
+
+    const data = await res.json() as {
+      records: { id: string; createdTime?: string; fields: Record<string, unknown> }[];
+      offset?: string;
+    };
+
+    sales.push(...data.records.map((record) => mapSaleRecord(record, sellerName)));
+    offset = data.offset;
+  } while (offset);
+
+  return sales.sort((a, b) => saleTimestamp(b) - saleTimestamp(a));
 }
 
 export async function updateLeadFields(recordId: string, fields: Record<string, unknown>, source?: AirtableSource): Promise<void> {
