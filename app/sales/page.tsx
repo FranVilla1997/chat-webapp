@@ -66,10 +66,12 @@ export default async function SalesPage() {
 
   return (
     <main style={{
-      minHeight: '100svh',
+      height: '100svh',
+      overflowY: 'auto',
+      overflowX: 'hidden',
       background: '#050508',
       color: '#e4e4e8',
-      padding: '28px min(4vw, 44px)',
+      padding: '28px min(4vw, 44px) 42px',
       fontFamily: 'inherit',
     }}>
       <header style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, marginBottom: 26 }}>
