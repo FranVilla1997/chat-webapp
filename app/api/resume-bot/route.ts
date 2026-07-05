@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server';
 import { getLeadById, updateLeadFields } from '@/lib/airtable';
 import { isTerminalStage } from '@/lib/stage-rules';
 
@@ -9,8 +9,9 @@ export async function POST(req: NextRequest) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { recordId, airtableBaseId, airtableTableId } = await req.json() as {
+    const { recordId, clientId, airtableBaseId, airtableTableId } = await req.json() as {
       recordId?: string;
+      clientId?: string;
       airtableBaseId?: string;
       airtableTableId?: string;
     };
@@ -33,6 +34,17 @@ export async function POST(req: NextRequest) {
         baseId: airtableBaseId,
         tableId: airtableTableId,
       });
+
+      if (clientId) {
+        const service = createSupabaseServiceClient();
+        const { error: notificationError } = await service.from('lead_notifications').insert({
+          record_id: recordId,
+          client_id: clientId,
+          action: 'bot_resume_blocked_terminal',
+        });
+        if (notificationError) console.error('bot terminal resume notification insert error:', notificationError);
+      }
+
       return NextResponse.json({ error: 'El lead esta cerrado. No corresponde reanudar el bot ni los seguimientos.' }, { status: 409 });
     }
 
@@ -46,6 +58,16 @@ export async function POST(req: NextRequest) {
       baseId: airtableBaseId,
       tableId: airtableTableId,
     });
+
+    if (clientId) {
+      const service = createSupabaseServiceClient();
+      const { error: notificationError } = await service.from('lead_notifications').insert({
+        record_id: recordId,
+        client_id: clientId,
+        action: 'bot_resumed',
+      });
+      if (notificationError) console.error('bot resume notification insert error:', notificationError);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {

@@ -111,24 +111,44 @@ export default async function SalesPage() {
           </p>
         </div>
 
-        <Link
-          href="/chats"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            border: '1px solid rgba(255,255,255,0.10)',
-            background: '#12121a',
-            color: '#e4e4e8',
-            borderRadius: 6,
-            padding: '10px 14px',
-            textDecoration: 'none',
-            fontSize: 12,
-            fontWeight: 800,
-          }}
-        >
-          Volver al chat
-        </Link>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <Link
+            href="/sales/ranking"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              border: '1px solid rgba(107,221,161,0.28)',
+              background: 'rgba(107,221,161,0.08)',
+              color: '#6bdda1',
+              borderRadius: 6,
+              padding: '10px 14px',
+              textDecoration: 'none',
+              fontSize: 12,
+              fontWeight: 800,
+            }}
+          >
+            Ver ranking
+          </Link>
+          <Link
+            href="/chats"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              border: '1px solid rgba(255,255,255,0.10)',
+              background: '#12121a',
+              color: '#e4e4e8',
+              borderRadius: 6,
+              padding: '10px 14px',
+              textDecoration: 'none',
+              fontSize: 12,
+              fontWeight: 800,
+            }}
+          >
+            Volver al chat
+          </Link>
+        </div>
       </header>
 
       <section style={{

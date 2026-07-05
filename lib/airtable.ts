@@ -1,4 +1,4 @@
-import type { AirtableLead, AirtableSale, AirtableSaleAttachment } from './types';
+import type { AirtableLead, AirtableSale, AirtableSaleAttachment, SellerRankingEntry } from './types';
 
 const HEADERS = {
   Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}`,
@@ -54,7 +54,8 @@ function getTableUrl(tableId: string): string {
   if (!baseId || !tableId) {
     throw new Error('Missing Airtable base or table');
   }
-  return `https://api.airtable.com/v0/${baseId}/${tableId}`;
+  const tableRef = tableId.startsWith('tbl') ? tableId : encodeURIComponent(tableId);
+  return `https://api.airtable.com/v0/${baseId}/${tableRef}`;
 }
 
 function salesTableId(): string {
@@ -67,6 +68,10 @@ function sellersTableId(): string {
 
 function stagesTableId(): string {
   return process.env.AIRTABLE_STAGES_TABLE_ID || 'tblFMvB5bjBmq5Hl8';
+}
+
+function sellerRankingsTableId(): string {
+  return process.env.AIRTABLE_SELLER_RANKINGS_TABLE_ID || 'Rankings vendedores';
 }
 
 function extractUrl(v: unknown): string {
@@ -89,6 +94,19 @@ function escapeAirtableFormulaValue(value: string): string {
 function extractLinkedIds(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((item) => String(item)).filter(Boolean);
+}
+
+function extractTextValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map((item) => String(item)).filter(Boolean).join(', ');
+  return String(value ?? '');
+}
+
+function extractSellerNameFromSale(value: unknown, sellersById: Map<string, string>): string {
+  if (!Array.isArray(value)) return extractTextValue(value);
+  return value
+    .map((item) => sellersById.get(String(item)) ?? String(item))
+    .filter(Boolean)
+    .join(', ');
 }
 
 function extractSaleAttachments(value: unknown): AirtableSaleAttachment[] {
@@ -114,6 +132,72 @@ function saleTimestamp(sale: Pick<AirtableSale, 'purchaseDate' | 'registeredAt' 
   if (!source) return 0;
   if (/^\d{4}-\d{2}-\d{2}$/.test(source)) return new Date(`${source}T12:00:00Z`).getTime();
   return new Date(source).getTime() || 0;
+}
+
+function monthKeyForDate(value: string): string {
+  if (!value) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 7);
+
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  return year && month ? `${year}-${month}` : '';
+}
+
+export function saleMonthKey(sale: AirtableSale): string {
+  return monthKeyForDate(sale.purchaseDate || sale.registeredAt || sale.createdTime);
+}
+
+function isConfirmedSale(sale: AirtableSale): boolean {
+  return sale.status.toLowerCase().includes('confirm');
+}
+
+function rankingKey(month: string, sellerName: string): string {
+  return `${month}-${sellerName}`.trim();
+}
+
+export function currentArgentinaMonthKey(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  return year && month ? `${year}-${month}` : '';
+}
+
+export function buildSellerRanking(sales: AirtableSale[], month: string): SellerRankingEntry[] {
+  const totals = new Map<string, { totalAmount: number; confirmedSales: number }>();
+
+  for (const sale of sales) {
+    const sellerName = sale.sellerName.trim();
+    if (!sellerName || !isConfirmedSale(sale) || saleMonthKey(sale) !== month) continue;
+    const current = totals.get(sellerName) ?? { totalAmount: 0, confirmedSales: 0 };
+    current.totalAmount += sale.amount || 0;
+    current.confirmedSales += 1;
+    totals.set(sellerName, current);
+  }
+
+  return [...totals.entries()]
+    .map(([sellerName, value]) => ({
+      month,
+      sellerName,
+      position: 0,
+      totalAmount: value.totalAmount,
+      confirmedSales: value.confirmedSales,
+      averageTicket: value.confirmedSales > 0 ? value.totalAmount / value.confirmedSales : 0,
+      calculatedAt: new Date().toISOString(),
+    }))
+    .sort((a, b) => b.totalAmount - a.totalAmount || b.confirmedSales - a.confirmedSales || a.sellerName.localeCompare(b.sellerName))
+    .map((entry, index) => ({ ...entry, position: index + 1 }));
 }
 
 function mapRecord(record: { id: string; fields: Record<string, unknown> }): AirtableLead {
@@ -171,7 +255,7 @@ function mapRecord(record: { id: string; fields: Record<string, unknown> }): Air
   };
 }
 
-function mapSaleRecord(record: { id: string; createdTime?: string; fields: Record<string, unknown> }, sellerName: string): AirtableSale {
+function mapSaleRecord(record: { id: string; createdTime?: string; fields: Record<string, unknown> }, sellerName?: string): AirtableSale {
   const f = record.fields;
   return {
     id: record.id,
@@ -182,10 +266,24 @@ function mapSaleRecord(record: { id: string; createdTime?: string; fields: Recor
     registeredAt: String(f['Fecha de registro'] ?? ''),
     paymentMethod: String(f['Método de pago'] ?? ''),
     status: String(f['Estado de la venta'] ?? ''),
-    sellerName,
+    sellerName: sellerName ?? extractTextValue(f['Vendedor responsable']),
     leadRecordIds: extractLinkedIds(f['Lead cerrado']),
     receipts: extractSaleAttachments(f['Comprobante de pago']),
     observations: String(f['Observaciones'] ?? ''),
+  };
+}
+
+function mapRankingRecord(record: { id: string; fields: Record<string, unknown> }): SellerRankingEntry {
+  const f = record.fields;
+  return {
+    id: record.id,
+    month: String(f['Mes'] ?? ''),
+    sellerName: String(f['Vendedor'] ?? ''),
+    position: Number(f['Posicion'] ?? 0),
+    totalAmount: Number(f['Monto total'] ?? 0),
+    confirmedSales: Number(f['Ventas confirmadas'] ?? 0),
+    averageTicket: Number(f['Ticket promedio'] ?? 0),
+    calculatedAt: String(f['Fecha de calculo'] ?? ''),
   };
 }
 
@@ -266,6 +364,93 @@ export async function getSalesBySellerName(sellerName: string): Promise<Airtable
   } while (offset);
 
   return sales.sort((a, b) => saleTimestamp(b) - saleTimestamp(a));
+}
+
+export async function getAllSales(): Promise<AirtableSale[]> {
+  const sales: AirtableSale[] = [];
+  let offset: string | undefined;
+  const baseUrl = getTableUrl(salesTableId());
+  const sellers = await getAirtableSellers();
+  const sellersById = new Map(sellers.map((seller) => [seller.id, seller.name]));
+
+  do {
+    let url = `${baseUrl}?pageSize=100`;
+    if (offset) url += `&offset=${offset}`;
+
+    const res = await fetch(url, { headers: HEADERS, cache: 'no-store' });
+    if (!res.ok) throw new Error(`Airtable sales error: ${res.status} ${await res.text()}`);
+
+    const data = await res.json() as {
+      records: { id: string; createdTime?: string; fields: Record<string, unknown> }[];
+      offset?: string;
+    };
+
+    sales.push(...data.records.map((record) => (
+      mapSaleRecord(record, extractSellerNameFromSale(record.fields['Vendedor responsable'], sellersById))
+    )));
+    offset = data.offset;
+  } while (offset);
+
+  return sales.sort((a, b) => saleTimestamp(b) - saleTimestamp(a));
+}
+
+export async function getSellerRankingHistory(): Promise<SellerRankingEntry[]> {
+  const rankings: SellerRankingEntry[] = [];
+  let offset: string | undefined;
+  const baseUrl = getTableUrl(sellerRankingsTableId());
+
+  do {
+    let url = `${baseUrl}?pageSize=100`;
+    if (offset) url += `&offset=${offset}`;
+
+    const res = await fetch(url, { headers: HEADERS, cache: 'no-store' });
+    if (!res.ok) throw new Error(`Airtable rankings error: ${res.status} ${await res.text()}`);
+
+    const data = await res.json() as {
+      records: { id: string; fields: Record<string, unknown> }[];
+      offset?: string;
+    };
+
+    rankings.push(...data.records.map(mapRankingRecord).filter((entry) => entry.month && entry.sellerName));
+    offset = data.offset;
+  } while (offset);
+
+  return rankings.sort((a, b) => b.month.localeCompare(a.month) || a.position - b.position || b.totalAmount - a.totalAmount);
+}
+
+export async function syncSellerRankingMonth(month: string): Promise<SellerRankingEntry[]> {
+  const normalizedMonth = /^\d{4}-\d{2}$/.test(month) ? month : currentArgentinaMonthKey();
+  const sales = await getAllSales();
+  const ranking = buildSellerRanking(sales, normalizedMonth);
+  const existing = await getSellerRankingHistory();
+  const existingByKey = new Map(
+    existing
+      .filter((entry) => entry.month === normalizedMonth && entry.id)
+      .map((entry) => [rankingKey(entry.month, entry.sellerName), entry.id as string])
+  );
+
+  for (const entry of ranking) {
+    const fields = {
+      Clave: rankingKey(entry.month, entry.sellerName),
+      Mes: entry.month,
+      Vendedor: entry.sellerName,
+      Posicion: entry.position,
+      'Monto total': entry.totalAmount,
+      'Ventas confirmadas': entry.confirmedSales,
+      'Ticket promedio': entry.averageTicket,
+      'Fecha de calculo': entry.calculatedAt,
+    };
+    const existingId = existingByKey.get(rankingKey(entry.month, entry.sellerName));
+    const url = existingId ? `${getTableUrl(sellerRankingsTableId())}/${existingId}` : getTableUrl(sellerRankingsTableId());
+    const res = await fetch(url, {
+      method: existingId ? 'PATCH' : 'POST',
+      headers: HEADERS,
+      body: JSON.stringify({ fields }),
+    });
+    if (!res.ok) throw new Error(`Airtable ranking sync error: ${res.status} ${await res.text()}`);
+  }
+
+  return ranking;
 }
 
 export async function updateLeadFields(recordId: string, fields: Record<string, unknown>, source?: AirtableSource): Promise<void> {

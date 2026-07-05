@@ -581,6 +581,35 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
             </svg>
             Ver mis ventas
           </button>
+          <button
+            type="button"
+            onClick={() => router.push('/sales/ranking')}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 9,
+              marginTop: 8,
+              padding: '9px 10px',
+              borderRadius: 5,
+              border: '1px solid rgba(107,221,161,0.26)',
+              background: 'rgba(107,221,161,0.07)',
+              color: '#6bdda1',
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 800,
+              textAlign: 'left',
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 21h8" />
+              <path d="M12 17v4" />
+              <path d="M7 4h10v4a5 5 0 0 1-10 0V4Z" />
+              <path d="M5 5H3v3a4 4 0 0 0 4 4" />
+              <path d="M19 5h2v3a4 4 0 0 1-4 4" />
+            </svg>
+            Ranking
+          </button>
         </div>
 
         <div style={{ height: 1, background: '#1e1e2a', margin: '0 12px 14px' }} />

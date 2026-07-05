@@ -39,6 +39,7 @@ export function BotPauseControl({ recordId, initialResumeAt, onPause, onResume, 
   const [resumeAt, setResumeAt] = useState(initialResumeAt ?? '');
   const [customValue, setCustomValue] = useState(toLocalDatetimeValue(new Date(Date.now() + 60 * 60 * 1000)));
   const [now, setNow] = useState(Date.now());
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setResumeAt(initialResumeAt ?? '');
@@ -60,14 +61,24 @@ export function BotPauseControl({ recordId, initialResumeAt, onPause, onResume, 
 
   async function applyPause(target: Date) {
     const iso = target.toISOString();
-    setResumeAt(iso);
-    await onPause(iso);
-    setOpen(false);
+    setError(null);
+    try {
+      await onPause(iso);
+      setResumeAt(iso);
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo pausar el bot.');
+    }
   }
 
   async function resumeBot() {
-    await onResume();
-    setResumeAt('');
+    setError(null);
+    try {
+      await onResume();
+      setResumeAt('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo reanudar el bot.');
+    }
   }
 
   return (
@@ -102,7 +113,10 @@ export function BotPauseControl({ recordId, initialResumeAt, onPause, onResume, 
         ) : (
           <button
             type="button"
-            onClick={() => setOpen(true)}
+            onClick={() => {
+              setError(null);
+              setOpen(true);
+            }}
             disabled={busy}
             style={{
               padding: '7px 14px', borderRadius: 5,
@@ -116,6 +130,16 @@ export function BotPauseControl({ recordId, initialResumeAt, onPause, onResume, 
             {busy ? 'Pausando...' : 'Pausar bot'}
           </button>
         )}
+        {error && !open ? (
+          <span style={{
+            flexBasis: '100%',
+            color: '#ff8a8a',
+            fontSize: 11,
+            lineHeight: 1.35,
+          }}>
+            {error}
+          </span>
+        ) : null}
       </div>
 
       {open && (
@@ -196,6 +220,20 @@ export function BotPauseControl({ recordId, initialResumeAt, onPause, onResume, 
               >
                 Pausar hasta esa fecha
               </button>
+              {error ? (
+                <p style={{
+                  margin: '10px 0 0',
+                  color: '#ff8a8a',
+                  background: 'rgba(229,62,62,0.10)',
+                  border: '1px solid rgba(229,62,62,0.24)',
+                  borderRadius: 8,
+                  padding: '9px 10px',
+                  fontSize: 12,
+                  lineHeight: 1.35,
+                }}>
+                  {error}
+                </p>
+              ) : null}
             </div>
           </div>
         </div>

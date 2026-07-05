@@ -165,3 +165,14 @@ export interface AirtableSale {
   receipts: AirtableSaleAttachment[];
   observations: string;
 }
+
+export interface SellerRankingEntry {
+  id?: string;
+  month: string;
+  sellerName: string;
+  position: number;
+  totalAmount: number;
+  confirmedSales: number;
+  averageTicket: number;
+  calculatedAt: string;
+}

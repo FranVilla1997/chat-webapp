@@ -832,13 +832,15 @@ export function ChatContainer({
       const response = await fetch('/api/pause-bot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recordId: leadId, resumeAt, airtableBaseId, airtableTableId }),
+        body: JSON.stringify({ recordId: leadId, resumeAt, clientId, airtableBaseId, airtableTableId }),
       });
       const result = await response.json() as { error?: string; botResumeAt?: string };
       if (!response.ok) throw new Error(result.error ?? 'No se pudo pausar el bot');
       setBotResumeAt(result.botResumeAt ?? resumeAt);
     } catch (err) {
-      setStageError(err instanceof Error ? err.message : 'No se pudo pausar el bot');
+      const message = err instanceof Error ? err.message : 'No se pudo pausar el bot';
+      setStageError(message);
+      throw new Error(message);
     } finally {
       setPauseBusy(false);
     }
@@ -851,13 +853,15 @@ export function ChatContainer({
       const response = await fetch('/api/resume-bot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recordId: leadId, airtableBaseId, airtableTableId }),
+        body: JSON.stringify({ recordId: leadId, clientId, airtableBaseId, airtableTableId }),
       });
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error ?? 'No se pudo reanudar el bot');
       setBotResumeAt('');
     } catch (err) {
-      setStageError(err instanceof Error ? err.message : 'No se pudo reanudar el bot');
+      const message = err instanceof Error ? err.message : 'No se pudo reanudar el bot';
+      setStageError(message);
+      throw new Error(message);
     } finally {
       setPauseBusy(false);
     }

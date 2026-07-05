@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server';
 import { updateLeadFields } from '@/lib/airtable';
 
 export async function POST(req: NextRequest) {
@@ -8,9 +8,10 @@ export async function POST(req: NextRequest) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { recordId, resumeAt, airtableBaseId, airtableTableId } = await req.json() as {
+    const { recordId, resumeAt, clientId, airtableBaseId, airtableTableId } = await req.json() as {
       recordId?: string;
       resumeAt?: string;
+      clientId?: string;
       airtableBaseId?: string;
       airtableTableId?: string;
     };
@@ -35,6 +36,16 @@ export async function POST(req: NextRequest) {
       baseId: airtableBaseId,
       tableId: airtableTableId,
     });
+
+    if (clientId) {
+      const service = createSupabaseServiceClient();
+      const { error: notificationError } = await service.from('lead_notifications').insert({
+        record_id: recordId,
+        client_id: clientId,
+        action: 'bot_paused',
+      });
+      if (notificationError) console.error('bot pause notification insert error:', notificationError);
+    }
 
     return NextResponse.json({
       ok: true,
