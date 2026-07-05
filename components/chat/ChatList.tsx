@@ -28,6 +28,8 @@ type NotificationSoundSettings = {
   volume: number;
 };
 
+type ReplyTimerUrgency = 'ok' | 'warm' | 'hot' | 'overdue';
+
 const NOTIFICATION_SOUNDS: { value: NotificationSound; label: string }[] = [
   { value: 'scala', label: 'SCALA' },
   { value: 'ping', label: 'Ping' },
@@ -42,6 +44,7 @@ const DEFAULT_SOUND_SETTINGS: NotificationSoundSettings = {
 const NOTIFICATION_GAIN_BOOST = 3.4;
 const PROPOSAL_STAGE = 'Propuesta enviada';
 const NEEDS_REPLY_FILTER = 'needs_reply';
+const SELLER_REPLY_LIMIT_MS = 10 * 60 * 1000;
 
 function normalizeStageKey(stage?: string) {
   const value = String(stage ?? '').trim();
@@ -104,6 +107,43 @@ function requiresHumanReply(lead: AirtableLead, previews: Record<string, LastMes
   return previews[lead.RecordID]?.role === 'user';
 }
 
+function formatReplyTimer(ms: number) {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function replyTimerInfo(message: LastMessage | undefined, nowMs: number) {
+  if (!message || message.role !== 'user') return null;
+  const sentAt = new Date(message.created_at).getTime();
+  if (!Number.isFinite(sentAt)) return null;
+
+  const remainingMs = sentAt + SELLER_REPLY_LIMIT_MS - nowMs;
+  const overdue = remainingMs <= 0;
+  const urgency: ReplyTimerUrgency = overdue ? 'overdue' : remainingMs <= 2 * 60 * 1000 ? 'hot' : remainingMs <= 5 * 60 * 1000 ? 'warm' : 'ok';
+
+  return {
+    overdue,
+    urgency,
+    label: overdue ? `Vencido +${formatReplyTimer(Math.abs(remainingMs))}` : `Responder ${formatReplyTimer(remainingMs)}`,
+    compact: overdue ? `+${formatReplyTimer(Math.abs(remainingMs))}` : formatReplyTimer(remainingMs),
+  };
+}
+
+function replyTimerColors(urgency: ReplyTimerUrgency) {
+  if (urgency === 'overdue') {
+    return { color: '#ff8a8a', bg: 'rgba(229,62,62,0.14)', border: 'rgba(229,62,62,0.38)' };
+  }
+  if (urgency === 'hot') {
+    return { color: '#ffb4b4', bg: 'rgba(229,62,62,0.10)', border: 'rgba(229,62,62,0.26)' };
+  }
+  if (urgency === 'warm') {
+    return { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.30)' };
+  }
+  return { color: '#6bdda1', bg: 'rgba(107,221,161,0.10)', border: 'rgba(107,221,161,0.24)' };
+}
+
 interface Toast {
   id: string;
   lead: AirtableLead;
@@ -121,6 +161,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
   const [search, setSearch] = useState('');
   const [loggingOut, setLoggingOut] = useState(false);
   const [soundSettings, setSoundSettings] = useState<NotificationSoundSettings>(DEFAULT_SOUND_SETTINGS);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const leadsRef = useRef(leads);
   leadsRef.current = leads;
   const selectedLeadRef = useRef(selectedLead);
@@ -322,6 +363,11 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
   }, [soundSettings]);
 
   useEffect(() => {
+    const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
     const unlockAudio = () => {
       const ctx = getAudioContext();
       ctx?.resume().catch(() => undefined);
@@ -454,6 +500,16 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
 
   const calificadosCount = counts['calificado'] ?? 0;
   const needsReplyCount = counts[NEEDS_REPLY_FILTER] ?? 0;
+  const mostUrgentReplyTimer = useMemo(() => {
+    return leads
+      .map((lead) => replyTimerInfo(msgPreviews[lead.RecordID], nowMs))
+      .filter((timer): timer is NonNullable<typeof timer> => Boolean(timer))
+      .sort((a, b) => {
+        const order: Record<ReplyTimerUrgency, number> = { overdue: 0, hot: 1, warm: 2, ok: 3 };
+        return order[a.urgency] - order[b.urgency];
+      })[0] ?? null;
+  }, [leads, msgPreviews, nowMs]);
+  const mostUrgentReplyColors = mostUrgentReplyTimer ? replyTimerColors(mostUrgentReplyTimer.urgency) : null;
 
   return (
     <div style={{ display: 'flex', height: '100svh', overflow: 'hidden', background: '#000' }}>
@@ -558,8 +614,25 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
               }}>{needsReplyCount}</span>
             </div>
             <p style={{ fontSize: 10, color: 'rgba(245,158,11,0.7)', margin: '3px 0 0' }}>
-              Último mensaje del cliente
+              {mostUrgentReplyTimer ? mostUrgentReplyTimer.label : 'Último mensaje del cliente'}
             </p>
+            {mostUrgentReplyTimer && mostUrgentReplyColors ? (
+              <div style={{
+                marginTop: 8,
+                border: `1px solid ${mostUrgentReplyColors.border}`,
+                background: mostUrgentReplyColors.bg,
+                color: mostUrgentReplyColors.color,
+                borderRadius: 4,
+                padding: '5px 7px',
+                fontFamily: MONO,
+                fontSize: 10,
+                fontWeight: 900,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              }}>
+                {mostUrgentReplyTimer.overdue ? 'Tiempo vencido' : 'Tiempo objetivo 10 min'}
+              </div>
+            ) : null}
           </button>
         )}
 
@@ -793,7 +866,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
                   letterSpacing: '0.04em',
                 }}
               >
-                {needsReplyCount} sin responder
+                {needsReplyCount} sin responder{mostUrgentReplyTimer ? ` · ${mostUrgentReplyTimer.compact}` : ''}
               </button>
             )}
           </div>
@@ -813,6 +886,8 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
             const initial = (lead.whatsapp_display_name || lead.name || lead.phone).charAt(0).toUpperCase();
             const lastMsg = msgPreviews[lead.RecordID];
             const needsReply = requiresHumanReply(lead, msgPreviews);
+            const replyTimer = replyTimerInfo(lastMsg, nowMs);
+            const replyColors = replyTimer ? replyTimerColors(replyTimer.urgency) : null;
 
             let msgPrefix = '';
             if (lastMsg?.role === 'human_agent') msgPrefix = 'Vos: ';
@@ -827,6 +902,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
             let leftBorder = 'transparent';
             if (isSelected)   { rowBg = 'rgba(24,93,232,0.1)';   leftBorder = '#185de8'; }
             else if (isNew)   { rowBg = 'rgba(107,221,161,0.06)'; leftBorder = '#6bdda1'; }
+            else if (replyTimer?.overdue) { rowBg = 'rgba(229,62,62,0.06)'; leftBorder = '#e53e3e'; }
             else if (needsReply) { rowBg = 'rgba(245,158,11,0.04)'; leftBorder = '#f59e0b'; }
 
             return (
@@ -891,7 +967,24 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
                           animation: 'newBadge 1.5s ease-in-out infinite',
                         }}>NEW</span>
                       )}
-                      {!isNew && needsReply && (
+                      {!isNew && needsReply && replyTimer && replyColors && (
+                        <span style={{
+                          fontSize: 8,
+                          fontWeight: 800,
+                          color: replyColors.color,
+                          background: replyColors.bg,
+                          border: `1px solid ${replyColors.border}`,
+                          borderRadius: 3,
+                          padding: '1px 5px',
+                          letterSpacing: '0.06em',
+                          textTransform: 'uppercase',
+                          fontFamily: MONO,
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {replyTimer.overdue ? `vencido ${replyTimer.compact}` : replyTimer.compact}
+                        </span>
+                      )}
+                      {!isNew && needsReply && !replyTimer && (
                         <span style={{
                           fontSize: 8,
                           fontWeight: 800,
@@ -931,6 +1024,19 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
                   {lead.score && (
                     <span style={{ fontSize: 9, color: '#404050', fontFamily: MONO, marginLeft: 5 }}>
                       {lead.score}pts
+                    </span>
+                  )}
+                  {replyTimer && replyColors && (
+                    <span style={{
+                      display: 'block',
+                      marginTop: 5,
+                      color: replyColors.color,
+                      fontSize: 9,
+                      fontWeight: 800,
+                      fontFamily: MONO,
+                      letterSpacing: '0.04em',
+                    }}>
+                      {replyTimer.label}
                     </span>
                   )}
                 </div>
