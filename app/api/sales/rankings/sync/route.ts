@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { currentArgentinaMonthKey, syncSellerRankingMonth } from '@/lib/airtable';
+import { getCrmAccessState } from '@/lib/crm-access';
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = createSupabaseServerClient();
-    const { data: { session } } = await supabase.auth.getSession();
+    const { session, allowed } = await getCrmAccessState();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const body = await req.json().catch(() => ({})) as { month?: string };
     const month = /^\d{4}-\d{2}$/.test(String(body.month ?? ''))

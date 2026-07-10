@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server';
 import { createSaleRecord, getPipelineStages, updateLeadFields, updateLeadStage } from '@/lib/airtable';
 import { cancelPendingFollowupsForLead } from '@/lib/followup-queue';
+import { hasCrmAccess } from '@/lib/crm-access';
 
 const ATTACHMENTS_BUCKET = 'chat-attachments';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
@@ -9,11 +10,13 @@ const PAYMENT_METHODS = new Set(['Transferencia', 'Tarjeta', 'Efectivo', 'Cheque
 const SALE_STATUSES = new Set(['Confirmada', 'Pendiente de pago', 'Cancelada']);
 
 function safeFileName(name: string) {
-  return name
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9._-]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'comprobante';
+  return (
+    name
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'comprobante'
+  );
 }
 
 async function ensureBucket() {
@@ -28,7 +31,10 @@ async function ensureBucket() {
 }
 
 function parseAmount(value: FormDataEntryValue | null): number {
-  const raw = String(value ?? '').trim().replace(/\./g, '').replace(',', '.');
+  const raw = String(value ?? '')
+    .trim()
+    .replace(/\./g, '')
+    .replace(',', '.');
   const amount = Number(raw);
   return Number.isFinite(amount) ? amount : NaN;
 }
@@ -36,12 +42,15 @@ function parseAmount(value: FormDataEntryValue | null): number {
 export async function POST(req: NextRequest) {
   try {
     const auth = createSupabaseServerClient();
-    const { data: { session } } = await auth.auth.getSession();
+    const {
+      data: { session },
+    } = await auth.auth.getSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const form = await req.formData();
+    const standalone = String(form.get('standalone') ?? '') === 'true';
     const leadId = String(form.get('leadId') ?? '').trim();
-    const clientId = String(form.get('clientId') ?? '').trim();
+    let clientId = String(form.get('clientId') ?? '').trim();
     const sellerRecordId = String(form.get('sellerRecordId') ?? '').trim();
     const description = String(form.get('description') ?? '').trim();
     const observations = String(form.get('observations') ?? '').trim();
@@ -51,12 +60,18 @@ export async function POST(req: NextRequest) {
     const amount = parseAmount(form.get('amount'));
     const receiptEntries = form.getAll('receipts');
     const legacyReceipt = form.get('receipt');
-    const receipts = [
-      ...receiptEntries,
-      ...(legacyReceipt ? [legacyReceipt] : []),
-    ].filter((entry): entry is File => entry instanceof File && entry.size > 0);
+    const receipts = [...receiptEntries, ...(legacyReceipt ? [legacyReceipt] : [])].filter((entry): entry is File => entry instanceof File && entry.size > 0);
 
-    if (!leadId || !clientId || !sellerRecordId || !description || !purchaseDate || !Number.isFinite(amount) || amount <= 0) {
+    if (standalone) {
+      const { data: profile } = await auth.from('seller_profiles').select('*').eq('user_id', session.user.id).single();
+      if (!hasCrmAccess(session.user.id)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+      clientId = String(profile?.client_id ?? '').trim();
+    }
+
+    const missingChatSaleFields = !standalone && (!leadId || !sellerRecordId);
+    if (missingChatSaleFields || !clientId || !description || !purchaseDate || !Number.isFinite(amount) || amount <= 0) {
       return NextResponse.json({ error: 'Faltan datos obligatorios para registrar la venta.' }, { status: 400 });
     }
     if (!PAYMENT_METHODS.has(paymentMethod)) {
@@ -65,7 +80,7 @@ export async function POST(req: NextRequest) {
     if (!SALE_STATUSES.has(status)) {
       return NextResponse.json({ error: 'Estado de venta inválido.' }, { status: 400 });
     }
-    if (!receipts.length) {
+    if (!standalone && !receipts.length) {
       return NextResponse.json({ error: 'El comprobante de pago es obligatorio.' }, { status: 400 });
     }
     if (receipts.some((receipt) => !receipt.type.startsWith('image/') && receipt.type !== 'application/pdf')) {
@@ -75,31 +90,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Cada comprobante no puede superar 50 MB.' }, { status: 400 });
     }
 
-    await ensureBucket();
+    if (receipts.length) await ensureBucket();
     const service = createSupabaseServiceClient();
-    const uploadedReceipts = await Promise.all(receipts.map(async (receipt, index) => {
-      const fileName = safeFileName(receipt.name || 'comprobante');
-      const storagePath = `${clientId}/${leadId}/sales/${Date.now()}-${index}-${fileName}`;
-      const bytes = Buffer.from(await receipt.arrayBuffer());
+    const uploadedReceipts = await Promise.all(
+      receipts.map(async (receipt, index) => {
+        const fileName = safeFileName(receipt.name || 'comprobante');
+        const storagePath = `${clientId}/${leadId || 'general'}/sales/${Date.now()}-${index}-${fileName}`;
+        const bytes = Buffer.from(await receipt.arrayBuffer());
 
-      const { error: uploadError } = await service.storage
-        .from(ATTACHMENTS_BUCKET)
-        .upload(storagePath, bytes, {
+        const { error: uploadError } = await service.storage.from(ATTACHMENTS_BUCKET).upload(storagePath, bytes, {
           contentType: receipt.type || 'application/octet-stream',
           upsert: false,
         });
-      if (uploadError) throw new Error(uploadError.message);
+        if (uploadError) throw new Error(uploadError.message);
 
-      const { data: signed, error: signedError } = await service.storage
-        .from(ATTACHMENTS_BUCKET)
-        .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS);
-      if (signedError || !signed?.signedUrl) throw new Error(signedError?.message ?? 'No se pudo preparar el comprobante.');
+        const { data: signed, error: signedError } = await service.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS);
+        if (signedError || !signed?.signedUrl) throw new Error(signedError?.message ?? 'No se pudo preparar el comprobante.');
 
-      return {
-        url: signed.signedUrl,
-        filename: fileName,
-      };
-    }));
+        return {
+          url: signed.signedUrl,
+          filename: fileName,
+        };
+      })
+    );
 
     const sale = await createSaleRecord({
       leadRecordId: leadId,
@@ -114,41 +127,43 @@ export async function POST(req: NextRequest) {
     });
 
     const warnings: string[] = [];
-    try {
-      await updateLeadFields(leadId, {
-        won_amount: String(amount),
-      });
-    } catch (err) {
-      console.error('Lead won_amount update failed:', err);
-      warnings.push('No se pudo actualizar el monto ganado del lead.');
-    }
+    if (leadId) {
+      try {
+        await updateLeadFields(leadId, {
+          won_amount: String(amount),
+        });
+      } catch (err) {
+        console.error('Lead won_amount update failed:', err);
+        warnings.push('No se pudo actualizar el monto ganado del lead.');
+      }
 
-    try {
-      const stages = await getPipelineStages();
-      const wonStage = stages.find((stage) => stage.name === 'cerrado_ganado');
-      if (!wonStage) throw new Error('No se encontró la etapa cerrado_ganado.');
-      await updateLeadStage(leadId, wonStage.id);
-      await updateLeadFields(leadId, {
-        bot_can_reply: false,
-        bot_can_followup: false,
-        bot_paused_at: null,
-        bot_resume_at: null,
-        bot_paused_by: '',
-      });
-      await cancelPendingFollowupsForLead({
-        leadId,
-        clientId,
-        reason: 'Venta registrada: lead cerrado ganado, seguimiento automatico cancelado.',
-      });
-      const { error: notificationError } = await service.from('lead_notifications').insert({
-        record_id: leadId,
-        client_id: clientId,
-        action: 'stage_updated',
-      });
-      if (notificationError) console.error('Lead won stage notification failed:', notificationError);
-    } catch (err) {
-      console.error('Lead won stage update failed:', err);
-      warnings.push('No se pudo mover el lead a cerrado_ganado.');
+      try {
+        const stages = await getPipelineStages();
+        const wonStage = stages.find((stage) => stage.name === 'cerrado_ganado');
+        if (!wonStage) throw new Error('No se encontró la etapa cerrado_ganado.');
+        await updateLeadStage(leadId, wonStage.id);
+        await updateLeadFields(leadId, {
+          bot_can_reply: false,
+          bot_can_followup: false,
+          bot_paused_at: null,
+          bot_resume_at: null,
+          bot_paused_by: '',
+        });
+        await cancelPendingFollowupsForLead({
+          leadId,
+          clientId,
+          reason: 'Venta registrada: lead cerrado ganado, seguimiento automatico cancelado.',
+        });
+        const { error: notificationError } = await service.from('lead_notifications').insert({
+          record_id: leadId,
+          client_id: clientId,
+          action: 'stage_updated',
+        });
+        if (notificationError) console.error('Lead won stage notification failed:', notificationError);
+      } catch (err) {
+        console.error('Lead won stage update failed:', err);
+        warnings.push('No se pudo mover el lead a cerrado_ganado.');
+      }
     }
 
     return NextResponse.json({ ok: true, saleId: sale.id, warnings });

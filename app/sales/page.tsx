@@ -113,6 +113,24 @@ export default async function SalesPage() {
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <Link
+            href="/crm"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              border: '1px solid rgba(24,93,232,0.28)',
+              background: 'rgba(24,93,232,0.08)',
+              color: '#8ab4ff',
+              borderRadius: 6,
+              padding: '10px 14px',
+              textDecoration: 'none',
+              fontSize: 12,
+              fontWeight: 800,
+            }}
+          >
+            Control CRM
+          </Link>
+          <Link
             href="/sales/ranking"
             style={{
               display: 'inline-flex',

@@ -9,6 +9,7 @@ import {
   saleMonthKey,
 } from '@/lib/airtable';
 import { getSellerProfile } from '@/lib/auth';
+import { hasCrmAccess } from '@/lib/crm-access';
 import type { SellerRankingEntry } from '@/lib/types';
 import { RankingSyncButton } from '@/components/sales/RankingSyncButton';
 
@@ -63,6 +64,7 @@ export default async function SalesRankingPage({ searchParams }: { searchParams?
   const profile = await getSellerProfile();
   if (!profile) redirect('/login');
 
+  const canSyncRanking = hasCrmAccess(profile.user_id);
   const sellerName = profile.airtable_seller_name ?? profile.name ?? '';
   const currentMonth = currentArgentinaMonthKey();
   const selectedMonth = /^\d{4}-\d{2}$/.test(String(searchParams?.month ?? ''))
@@ -130,9 +132,10 @@ export default async function SalesRankingPage({ searchParams }: { searchParams?
         </div>
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <Link href="/crm" style={navButtonStyle}>Control CRM</Link>
           <Link href="/sales" style={navButtonStyle}>Mis ventas</Link>
           <Link href="/chats" style={navButtonStyle}>Volver al chat</Link>
-          <RankingSyncButton month={selectedMonth} />
+          {canSyncRanking ? <RankingSyncButton month={selectedMonth} /> : null}
         </div>
       </header>
 

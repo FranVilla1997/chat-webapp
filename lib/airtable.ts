@@ -24,8 +24,8 @@ export interface AirtableStage {
 }
 
 export interface CreateSaleInput {
-  leadRecordId: string;
-  sellerRecordId: string;
+  leadRecordId?: string;
+  sellerRecordId?: string;
   description: string;
   amount: number;
   purchaseDate: string;
@@ -97,7 +97,11 @@ function extractLinkedIds(value: unknown): string[] {
 }
 
 function extractTextValue(value: unknown): string {
-  if (Array.isArray(value)) return value.map((item) => String(item)).filter(Boolean).join(', ');
+  if (Array.isArray(value))
+    return value
+      .map((item) => String(item))
+      .filter(Boolean)
+      .join(', ');
   return String(value ?? '');
 }
 
@@ -118,12 +122,14 @@ function extractSaleAttachments(value: unknown): AirtableSaleAttachment[] {
     const url = String(attachment.url ?? '');
     if (!url) return [];
 
-    return [{
-      id: attachment.id ? String(attachment.id) : undefined,
-      url,
-      filename: String(attachment.filename ?? 'comprobante'),
-      type: attachment.type ? String(attachment.type) : undefined,
-    }];
+    return [
+      {
+        id: attachment.id ? String(attachment.id) : undefined,
+        url,
+        filename: String(attachment.filename ?? 'comprobante'),
+        type: attachment.type ? String(attachment.type) : undefined,
+      },
+    ];
   });
 }
 
@@ -180,7 +186,10 @@ export function buildSellerRanking(sales: AirtableSale[], month: string): Seller
   for (const sale of sales) {
     const sellerName = sale.sellerName.trim();
     if (!sellerName || !isConfirmedSale(sale) || saleMonthKey(sale) !== month) continue;
-    const current = totals.get(sellerName) ?? { totalAmount: 0, confirmedSales: 0 };
+    const current = totals.get(sellerName) ?? {
+      totalAmount: 0,
+      confirmedSales: 0,
+    };
     current.totalAmount += sale.amount || 0;
     current.confirmedSales += 1;
     totals.set(sellerName, current);
@@ -203,54 +212,54 @@ export function buildSellerRanking(sales: AirtableSale[], month: string): Seller
 function mapRecord(record: { id: string; fields: Record<string, unknown> }): AirtableLead {
   const f = record.fields;
   return {
-    RecordID:              record.id,
-    phone:                 String(f['phone'] ?? ''),
+    RecordID: record.id,
+    phone: String(f['phone'] ?? ''),
     whatsapp_display_name: String(f['whatsapp_display_name'] ?? ''),
-    name:                  String(f['name'] ?? ''),
-    client:                String(f['client'] ?? ''),
-    client_record_id:      String(f['client_record_id'] ?? ''),
+    name: String(f['name'] ?? ''),
+    client: String(f['client'] ?? ''),
+    client_record_id: String(f['client_record_id'] ?? ''),
 
-    CHAT:               extractUrl(f['CHAT']),
+    CHAT: extractUrl(f['CHAT']),
     bot_status_display: String(f['bot_status_display'] ?? ''),
-    bot_can_reply:      String(f['bot_can_reply'] ?? ''),
-    bot_can_followup:   String(f['bot_can_followup'] ?? ''),
-    bot_paused_by:      String(f['bot_paused_by'] ?? ''),
-    bot_paused_at:      String(f['bot_paused_at'] ?? ''),
-    bot_resume_at:      String(f['bot_resume_at'] ?? ''),
+    bot_can_reply: String(f['bot_can_reply'] ?? ''),
+    bot_can_followup: String(f['bot_can_followup'] ?? ''),
+    bot_paused_by: String(f['bot_paused_by'] ?? ''),
+    bot_paused_at: String(f['bot_paused_at'] ?? ''),
+    bot_resume_at: String(f['bot_resume_at'] ?? ''),
 
     source_instance: String(f['source_instance'] ?? ''),
 
     vendedor_asignado: String(f['Vendedor Asignado'] ?? ''),
 
-    current_stage:        String(f['current_stage'] ?? ''),
-    previous_stage:       String(f['previous_stage'] ?? ''),
-    score:                String(f['score'] ?? ''),
+    current_stage: String(f['current_stage'] ?? ''),
+    previous_stage: String(f['previous_stage'] ?? ''),
+    score: String(f['score'] ?? ''),
     qualification_reason: String(f['qualification_reason'] ?? ''),
-    qualified_at:         String(f['qualified_at'] ?? ''),
-    stage_changed_at:     String(f['stage_changed_at'] ?? ''),
+    qualified_at: String(f['qualified_at'] ?? ''),
+    stage_changed_at: String(f['stage_changed_at'] ?? ''),
 
-    dolor_principal:  String(f['dolor_principal'] ?? ''),
-    tipo_producto:    String(f['tipo_producto'] ?? ''),
-    medidas_info:     String(f['medidas_info'] ?? ''),
+    dolor_principal: String(f['dolor_principal'] ?? ''),
+    tipo_producto: String(f['tipo_producto'] ?? ''),
+    medidas_info: String(f['medidas_info'] ?? ''),
     zona_instalacion: String(f['zona_instalacion'] ?? ''),
-    urgencia_compra:  String(f['urgencia_compra'] ?? ''),
+    urgencia_compra: String(f['urgencia_compra'] ?? ''),
 
-    last_message_at:      String(f['last_message_at'] ?? ''),
+    last_message_at: String(f['last_message_at'] ?? ''),
     last_message_summary: String(f['last_message_summary'] ?? ''),
-    last_message_from:    String(f['last_message_from'] ?? ''),
-    total_messages:       String(f['total_messages'] ?? ''),
+    last_message_from: String(f['last_message_from'] ?? ''),
+    total_messages: String(f['total_messages'] ?? ''),
 
     next_followup_at: String(f['next_followup_at'] ?? ''),
-    followup_count:   String(f['followup_count'] ?? ''),
+    followup_count: String(f['followup_count'] ?? ''),
 
     proposal_sent_at: String(f['proposal_sent_at'] ?? ''),
-    proposal_amount:  String(f['proposal_amount'] ?? ''),
-    won_amount:       String(f['won_amount'] ?? ''),
-    lost_reason:      String(f['lost_reason'] ?? ''),
+    proposal_amount: String(f['proposal_amount'] ?? ''),
+    won_amount: String(f['won_amount'] ?? ''),
+    lost_reason: String(f['lost_reason'] ?? ''),
 
-    source:     String(f['source'] ?? ''),
-    tags:       String(f['tags'] ?? ''),
-    notes:      String(f['notes'] ?? ''),
+    source: String(f['source'] ?? ''),
+    tags: String(f['tags'] ?? ''),
+    notes: String(f['notes'] ?? ''),
     created_at: String(f['created_at'] ?? ''),
   };
 }
@@ -302,7 +311,7 @@ export async function getLeadsBySellerName(sellerName: string, source?: Airtable
       throw new Error(`Airtable error: ${res.status} ${await res.text()}`);
     }
 
-    const data = await res.json() as {
+    const data = (await res.json()) as {
       records: { id: string; fields: Record<string, unknown> }[];
       offset?: string;
     };
@@ -312,15 +321,15 @@ export async function getLeadsBySellerName(sellerName: string, source?: Airtable
   } while (offset);
 
   const STAGE_ORDER: Record<string, number> = {
-    calificado:       0,
-    en_calificacion:  1,
+    calificado: 0,
+    en_calificacion: 1,
     'Propuesta enviada': 2,
     propuesta_enviada: 2,
-    en_proceso:       3,
-    nuevo:            4,
-    no_responde:      5,
-    cerrado_ganado:   6,
-    cerrado_perdido:  7,
+    en_proceso: 3,
+    nuevo: 4,
+    no_responde: 5,
+    cerrado_ganado: 6,
+    cerrado_perdido: 7,
   };
 
   return leads.sort((a, b) => {
@@ -333,11 +342,47 @@ export async function getLeadsBySellerName(sellerName: string, source?: Airtable
   });
 }
 
+export async function getAllLeads(source?: AirtableSource): Promise<AirtableLead[]> {
+  const leads: AirtableLead[] = [];
+  let offset: string | undefined;
+  const baseUrl = getBaseUrl(source);
+
+  do {
+    let url = `${baseUrl}?pageSize=100&cellFormat=string&timeZone=America%2FArgentina%2FBuenos_Aires&userLocale=es`;
+    if (offset) url += `&offset=${offset}`;
+
+    const res = await fetch(url, { headers: HEADERS, cache: 'no-store' });
+    if (!res.ok) {
+      throw new Error(`Airtable error: ${res.status} ${await res.text()}`);
+    }
+
+    const data = (await res.json()) as {
+      records: { id: string; fields: Record<string, unknown> }[];
+      offset?: string;
+    };
+
+    leads.push(...data.records.map(mapRecord));
+    offset = data.offset;
+  } while (offset);
+
+  return leads.sort((a, b) => {
+    const aTime = new Date(a.last_message_at || a.created_at || 0).getTime();
+    const bTime = new Date(b.last_message_at || b.created_at || 0).getTime();
+    return bTime - aTime;
+  });
+}
+
 export async function getLeadById(recordId: string, source?: AirtableSource): Promise<AirtableLead | null> {
-  const res = await fetch(`${getBaseUrl(source)}/${recordId}`, { headers: HEADERS, cache: 'no-store' });
+  const res = await fetch(`${getBaseUrl(source)}/${recordId}`, {
+    headers: HEADERS,
+    cache: 'no-store',
+  });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Airtable error: ${res.status}`);
-  const data = await res.json() as { id: string; fields: Record<string, unknown> };
+  const data = (await res.json()) as {
+    id: string;
+    fields: Record<string, unknown>;
+  };
   return mapRecord(data);
 }
 
@@ -354,8 +399,12 @@ export async function getSalesBySellerName(sellerName: string): Promise<Airtable
     const res = await fetch(url, { headers: HEADERS, cache: 'no-store' });
     if (!res.ok) throw new Error(`Airtable sales error: ${res.status} ${await res.text()}`);
 
-    const data = await res.json() as {
-      records: { id: string; createdTime?: string; fields: Record<string, unknown> }[];
+    const data = (await res.json()) as {
+      records: {
+        id: string;
+        createdTime?: string;
+        fields: Record<string, unknown>;
+      }[];
       offset?: string;
     };
 
@@ -380,14 +429,16 @@ export async function getAllSales(): Promise<AirtableSale[]> {
     const res = await fetch(url, { headers: HEADERS, cache: 'no-store' });
     if (!res.ok) throw new Error(`Airtable sales error: ${res.status} ${await res.text()}`);
 
-    const data = await res.json() as {
-      records: { id: string; createdTime?: string; fields: Record<string, unknown> }[];
+    const data = (await res.json()) as {
+      records: {
+        id: string;
+        createdTime?: string;
+        fields: Record<string, unknown>;
+      }[];
       offset?: string;
     };
 
-    sales.push(...data.records.map((record) => (
-      mapSaleRecord(record, extractSellerNameFromSale(record.fields['Vendedor responsable'], sellersById))
-    )));
+    sales.push(...data.records.map((record) => mapSaleRecord(record, extractSellerNameFromSale(record.fields['Vendedor responsable'], sellersById))));
     offset = data.offset;
   } while (offset);
 
@@ -406,7 +457,7 @@ export async function getSellerRankingHistory(): Promise<SellerRankingEntry[]> {
     const res = await fetch(url, { headers: HEADERS, cache: 'no-store' });
     if (!res.ok) throw new Error(`Airtable rankings error: ${res.status} ${await res.text()}`);
 
-    const data = await res.json() as {
+    const data = (await res.json()) as {
       records: { id: string; fields: Record<string, unknown> }[];
       offset?: string;
     };
@@ -423,11 +474,7 @@ export async function syncSellerRankingMonth(month: string): Promise<SellerRanki
   const sales = await getAllSales();
   const ranking = buildSellerRanking(sales, normalizedMonth);
   const existing = await getSellerRankingHistory();
-  const existingByKey = new Map(
-    existing
-      .filter((entry) => entry.month === normalizedMonth && entry.id)
-      .map((entry) => [rankingKey(entry.month, entry.sellerName), entry.id as string])
-  );
+  const existingByKey = new Map(existing.filter((entry) => entry.month === normalizedMonth && entry.id).map((entry) => [rankingKey(entry.month, entry.sellerName), entry.id as string]));
 
   for (const entry of ranking) {
     const fields = {
@@ -474,21 +521,25 @@ export async function getPipelineStages(): Promise<AirtableStage[]> {
     const res = await fetch(url, { headers: HEADERS, cache: 'no-store' });
     if (!res.ok) throw new Error(`Airtable stages error: ${res.status} ${await res.text()}`);
 
-    const data = await res.json() as {
+    const data = (await res.json()) as {
       records: { id: string; fields: Record<string, unknown> }[];
       offset?: string;
     };
 
-    stages.push(...data.records.flatMap((record) => {
-      const name = String(record.fields['stage_name'] ?? '').trim();
-      if (!name) return [];
-      return [{
-        id: record.id,
-        name,
-        displayName: String(record.fields['stage_display_name'] ?? name).trim(),
-        order: Number(record.fields['stage_order'] ?? 999),
-      }];
-    }));
+    stages.push(
+      ...data.records.flatMap((record) => {
+        const name = String(record.fields['stage_name'] ?? '').trim();
+        if (!name) return [];
+        return [
+          {
+            id: record.id,
+            name,
+            displayName: String(record.fields['stage_display_name'] ?? name).trim(),
+            order: Number(record.fields['stage_order'] ?? 999),
+          },
+        ];
+      })
+    );
     offset = data.offset;
   } while (offset);
 
@@ -514,21 +565,27 @@ export async function getAirtableSellers(): Promise<AirtableSeller[]> {
     const res = await fetch(url, { headers: HEADERS, cache: 'no-store' });
     if (!res.ok) throw new Error(`Airtable sellers error: ${res.status} ${await res.text()}`);
 
-    const data = await res.json() as {
+    const data = (await res.json()) as {
       records: { id: string; fields: Record<string, unknown> }[];
       offset?: string;
     };
 
-    sellers.push(...data.records.map((record) => {
-      const checkboxActive = record.fields['Activo'];
-      const status = String(record.fields['Estado'] ?? '').trim().toLowerCase();
+    sellers.push(
+      ...data.records
+        .map((record) => {
+          const checkboxActive = record.fields['Activo'];
+          const status = String(record.fields['Estado'] ?? '')
+            .trim()
+            .toLowerCase();
 
-      return {
-        id: record.id,
-        name: String(record.fields['Nombre'] ?? ''),
-        active: Boolean(checkboxActive) || status === 'activo',
-      };
-    }).filter((seller) => seller.name));
+          return {
+            id: record.id,
+            name: String(record.fields['Nombre'] ?? ''),
+            active: Boolean(checkboxActive) || status === 'activo',
+          };
+        })
+        .filter((seller) => seller.name)
+    );
     offset = data.offset;
   } while (offset);
 
@@ -537,15 +594,15 @@ export async function getAirtableSellers(): Promise<AirtableSeller[]> {
 
 export async function createSaleRecord(input: CreateSaleInput): Promise<{ id: string }> {
   const fields: Record<string, unknown> = {
-    'Descripción': input.description,
-    'Lead cerrado': [input.leadRecordId],
-    'Vendedor responsable': [input.sellerRecordId],
+    Descripción: input.description,
     'Monto de la venta': input.amount,
     'Fecha de compra': input.purchaseDate,
     'Método de pago': input.paymentMethod,
     'Estado de la venta': input.status ?? 'Confirmada',
   };
 
+  if (input.leadRecordId?.trim()) fields['Lead cerrado'] = [input.leadRecordId.trim()];
+  if (input.sellerRecordId?.trim()) fields['Vendedor responsable'] = [input.sellerRecordId.trim()];
   if (input.observations?.trim()) fields['Observaciones'] = input.observations.trim();
   if (input.receipts?.length) {
     fields['Comprobante de pago'] = input.receipts.map((receipt) => ({
@@ -561,6 +618,6 @@ export async function createSaleRecord(input: CreateSaleInput): Promise<{ id: st
   });
 
   if (!res.ok) throw new Error(`Airtable sale error: ${res.status} ${await res.text()}`);
-  const data = await res.json() as { id: string };
+  const data = (await res.json()) as { id: string };
   return { id: data.id };
 }

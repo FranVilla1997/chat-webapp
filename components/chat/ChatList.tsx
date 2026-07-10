@@ -96,6 +96,19 @@ function formatTime(iso: string) {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
 }
 
+function safeInitial(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    const normalized = String(value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+    const match = normalized.match(/[a-zA-Z0-9]/);
+    if (match) return match[0].toUpperCase();
+  }
+
+  return '?';
+}
+
 function lastActivityTime(lead: AirtableLead, previews: Record<string, LastMessage>) {
   const previewTime = previews[lead.RecordID]?.created_at;
   const leadTime = lead.last_message_at;
@@ -543,7 +556,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
                 fontSize: 11, fontWeight: 800, color: '#185de8',
                 fontFamily: MONO,
               }}>
-                {sellerName.charAt(0).toUpperCase()}
+                {safeInitial(sellerName)}
               </div>
               <div style={{ minWidth: 0 }}>
                 <p style={{ fontSize: 12, fontWeight: 600, color: '#e4e4e8', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -609,6 +622,32 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
               <path d="M19 5h2v3a4 4 0 0 1-4 4" />
             </svg>
             Ranking
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/crm')}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 9,
+              marginTop: 8,
+              padding: '9px 10px',
+              borderRadius: 5,
+              border: '1px solid rgba(255,255,255,0.10)',
+              background: '#12121a',
+              color: '#e4e4e8',
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 800,
+              textAlign: 'left',
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 3v18h18" />
+              <path d="M7 14l3-3 3 2 5-6" />
+            </svg>
+            Control CRM
           </button>
         </div>
 
@@ -912,7 +951,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
             const isNew = newLeadIds.has(lead.RecordID) && !isSelected;
             const stageKey = normalizeStageKey(lead.current_stage);
             const badge = STAGE_BADGE[stageKey] ?? STAGE_BADGE['nuevo'];
-            const initial = (lead.whatsapp_display_name || lead.name || lead.phone).charAt(0).toUpperCase();
+            const initial = safeInitial(lead.whatsapp_display_name, lead.name, lead.phone);
             const lastMsg = msgPreviews[lead.RecordID];
             const needsReply = requiresHumanReply(lead, msgPreviews);
             const replyTimer = replyTimerInfo(lastMsg, nowMs);
@@ -1104,7 +1143,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
       {/* ══ Toasts de mensaje nuevo ══ */}
       <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none' }}>
         {toasts.map((toast) => {
-          const initial = (toast.lead.whatsapp_display_name || toast.lead.name || toast.lead.phone).charAt(0).toUpperCase();
+          const initial = safeInitial(toast.lead.whatsapp_display_name, toast.lead.name, toast.lead.phone);
           const name = toast.lead.whatsapp_display_name || toast.lead.name || toast.lead.phone;
           return (
             <div
