@@ -12,6 +12,7 @@ import {
 import { createSupabaseServiceClient } from "@/lib/supabase-server";
 import type { AirtableLead, AirtableSale } from "@/lib/types";
 import { CrmSaleButton } from "@/components/crm/CrmSaleButton";
+import { CrmMonthPicker, type CrmMonthOption } from "@/components/crm/CrmMonthPicker";
 import { getSellerProfile } from "@/lib/auth";
 import { hasCrmAccess } from "@/lib/crm-access";
 
@@ -20,6 +21,8 @@ export const dynamic = "force-dynamic";
 const MONO = `'SF Mono', 'Consolas', 'Liberation Mono', monospace`;
 const FOLLOWUP_MESSAGE_MATCH_WINDOW_MS = 3 * 60 * 1000;
 const RESPONSE_TIME_WINDOW_MS = 4 * 60 * 60 * 1000;
+const CRM_LIVE_CACHE_TTL_MS = 45 * 1000;
+const CRM_HISTORY_CACHE_TTL_MS = 10 * 60 * 1000;
 
 type CrmMessage = {
   id: string | number;
@@ -67,6 +70,50 @@ type FollowupStats = {
   responded: number;
   responseRate: number;
 };
+
+type CrmCacheEntry<T> = {
+  expiresAt: number;
+  value: Promise<T>;
+};
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __scalaCrmDataCache: Map<string, CrmCacheEntry<unknown>> | undefined;
+}
+
+function crmCacheStore() {
+  globalThis.__scalaCrmDataCache ??= new Map<string, CrmCacheEntry<unknown>>();
+  return globalThis.__scalaCrmDataCache;
+}
+
+function cacheTtlForRange(range: MonthRange) {
+  return range.isCurrentMonth ? CRM_LIVE_CACHE_TTL_MS : CRM_HISTORY_CACHE_TTL_MS;
+}
+
+async function cachedCrmData<T>(
+  key: string,
+  ttlMs: number,
+  loader: () => Promise<T>,
+): Promise<T> {
+  const store = crmCacheStore();
+  const now = Date.now();
+  const cached = store.get(key) as CrmCacheEntry<T> | undefined;
+
+  if (cached && cached.expiresAt > now) return cached.value;
+
+  let value: Promise<T>;
+  value = loader().catch((error) => {
+    if (store.get(key)?.value === value) store.delete(key);
+    throw error;
+  });
+
+  store.set(key, {
+    expiresAt: now + ttlMs,
+    value,
+  });
+
+  return value;
+}
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("es-AR", {
@@ -153,6 +200,29 @@ function crmAccessNextPath(searchParams?: {
   }
 
   return params.size ? `/crm?${params.toString()}` : "/crm";
+}
+
+function crmMonthHref(
+  month: string,
+  searchParams?: {
+    airtable_base_id?: string;
+    airtable_table_id?: string;
+    base_id?: string;
+    table_id?: string;
+  },
+) {
+  const params = new URLSearchParams();
+  params.set("month", month);
+
+  for (const [key, value] of Object.entries(searchParams ?? {})) {
+    if (value) params.set(key, value);
+  }
+
+  return `/crm?${params.toString()}`;
+}
+
+function airtableSourceCacheKey(source: { baseId?: string; tableId?: string }) {
+  return `${source.baseId || process.env.AIRTABLE_BASE_ID || "default"}:${source.tableId || process.env.AIRTABLE_LEADS_TABLE_ID || "default"}`;
 }
 
 function previousMonthKey(month: string) {
@@ -780,6 +850,10 @@ export default async function CrmControlPage({
     baseId: searchParams?.airtable_base_id ?? searchParams?.base_id,
     tableId: searchParams?.airtable_table_id ?? searchParams?.table_id,
   };
+  const sourceCacheKey = airtableSourceCacheKey(airtableSource);
+  const selectedCacheScope = range.isCurrentMonth ? "live" : "history";
+  const selectedTtl = cacheTtlForRange(range);
+  const previousTtl = cacheTtlForRange(previousRange);
 
   const [
     leadsResult,
@@ -789,22 +863,58 @@ export default async function CrmControlPage({
     followupsResult,
     previousFollowupsResult,
   ] = await Promise.all([
-    readSource(() => getAllLeads(airtableSource), [] as AirtableLead[]),
-    readSource(() => getAllSales(), [] as AirtableSale[]),
     readSource(
-      () => getMessagesForMonth(profile.client_id, range),
+      () =>
+        cachedCrmData(
+          `leads:${selectedCacheScope}:${sourceCacheKey}`,
+          selectedTtl,
+          () => getAllLeads(airtableSource),
+        ),
+      [] as AirtableLead[],
+    ),
+    readSource(
+      () =>
+        cachedCrmData(
+          `sales:${selectedCacheScope}`,
+          selectedTtl,
+          () => getAllSales(),
+        ),
+      [] as AirtableSale[],
+    ),
+    readSource(
+      () =>
+        cachedCrmData(
+          `messages:${profile.client_id}:${range.month}`,
+          selectedTtl,
+          () => getMessagesForMonth(profile.client_id, range),
+        ),
       [] as CrmMessage[],
     ),
     readSource(
-      () => getMessagesForMonth(profile.client_id, previousRange),
+      () =>
+        cachedCrmData(
+          `messages:${profile.client_id}:${previousRange.month}`,
+          previousTtl,
+          () => getMessagesForMonth(profile.client_id, previousRange),
+        ),
       [] as CrmMessage[],
     ),
     readSource(
-      () => getFollowupsForMonth(profile.client_id, range),
+      () =>
+        cachedCrmData(
+          `followups:${profile.client_id}:${range.month}`,
+          selectedTtl,
+          () => getFollowupsForMonth(profile.client_id, range),
+        ),
       [] as CrmFollowup[],
     ),
     readSource(
-      () => getFollowupsForMonth(profile.client_id, previousRange),
+      () =>
+        cachedCrmData(
+          `followups:${profile.client_id}:${previousRange.month}`,
+          previousTtl,
+          () => getFollowupsForMonth(profile.client_id, previousRange),
+        ),
       [] as CrmFollowup[],
     ),
   ]);
@@ -1056,6 +1166,15 @@ export default async function CrmControlPage({
       ...leads.map(leadMonthKey).filter(Boolean),
     ]),
   ].sort((a, b) => b.localeCompare(a));
+  const monthOptions: CrmMonthOption[] = availableMonths.map((month) => ({
+    month,
+    href: crmMonthHref(month, {
+      airtable_base_id: searchParams?.airtable_base_id,
+      airtable_table_id: searchParams?.airtable_table_id,
+      base_id: searchParams?.base_id,
+      table_id: searchParams?.table_id,
+    }),
+  }));
 
   const latestSales = [...allMonthSales]
     .sort((a, b) => saleTimestamp(b) - saleTimestamp(a))
@@ -1194,35 +1313,7 @@ export default async function CrmControlPage({
             Cambiar mes recalcula ventas, ranking y proyeccion.
           </p>
         </div>
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-            justifyContent: "flex-end",
-          }}
-        >
-          {availableMonths.map((month) => (
-            <Link
-              key={month}
-              href={`/crm?month=${month}`}
-              style={{
-                border: `1px solid ${month === selectedMonth ? "rgba(24,93,232,0.45)" : "rgba(255,255,255,0.08)"}`,
-                background:
-                  month === selectedMonth ? "rgba(24,93,232,0.16)" : "#12121a",
-                color: month === selectedMonth ? "#8ab4ff" : "#a8a8b3",
-                borderRadius: 999,
-                padding: "7px 10px",
-                textDecoration: "none",
-                fontSize: 11,
-                fontWeight: 800,
-                fontFamily: MONO,
-              }}
-            >
-              {month}
-            </Link>
-          ))}
-        </div>
+        <CrmMonthPicker months={monthOptions} selectedMonth={selectedMonth} />
       </section>
 
       <section
