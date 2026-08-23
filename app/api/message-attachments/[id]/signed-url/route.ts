@@ -38,6 +38,12 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
     return NextResponse.json({ error: 'Attachment not found' }, { status: 404 });
   }
 
+  // Los assets que envía el bot (send_media) se guardan con public_url y sin
+  // storage_path: no hay nada que firmar, se sirven directo.
+  if (!attachment.storage_path && attachment.public_url) {
+    return NextResponse.json({ url: attachment.public_url, expiresIn: null });
+  }
+
   const { data: signed, error: signedError } = await service.storage
     .from(attachment.storage_bucket)
     .createSignedUrl(attachment.storage_path, SIGNED_URL_TTL_SECONDS);

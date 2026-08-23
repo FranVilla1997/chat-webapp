@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { ChatContainer } from './ChatContainer';
+import { CrmSaleButton } from '@/components/crm/CrmSaleButton';
 import { buildLeadInfoFromAirtable } from '@/lib/utils';
 import type { AirtableLead } from '@/lib/types';
 import type { LastMessage } from '@/app/chats/page';
@@ -16,6 +17,7 @@ interface ChatListProps {
   lastMessages: Record<string, LastMessage>;
   airtableBaseId?: string;
   airtableTableId?: string;
+  crmAccess?: boolean;
 }
 
 const MONO = `'SF Mono', 'Consolas', 'Liberation Mono', monospace`;
@@ -66,6 +68,7 @@ const FUNNEL: { key: string; label: string; color: string }[] = [
   { key: 'calificado',       label: 'Calificado',       color: '#6bdda1' },
   { key: 'en_calificacion',  label: 'Calificando',      color: '#f59e0b' },
   { key: PROPOSAL_STAGE,     label: 'Propuesta enviada', color: '#185de8' },
+  { key: 'en_negociacion',   label: 'En negociación',   color: '#a78bfa' },
   { key: 'nuevo',            label: 'Nuevo',            color: '#3b7ef5' },
   { key: 'en_proceso',       label: 'En proceso',       color: '#f59e0b' },
   { key: 'no_responde',      label: 'No responde',      color: '#848484' },
@@ -80,6 +83,7 @@ const STAGE_BADGE: Record<string, { bg: string; color: string }> = {
   propuesta_enviada: { bg: 'rgba(24,93,232,0.10)',   color: '#185de8' },
   nuevo:             { bg: 'rgba(59,126,245,0.10)',  color: '#3b7ef5' },
   en_proceso:        { bg: 'rgba(245,158,11,0.10)',  color: '#f59e0b' },
+  en_negociacion:    { bg: 'rgba(167,139,250,0.10)', color: '#a78bfa' },
   no_responde:       { bg: 'rgba(132,132,132,0.10)', color: '#848484' },
   cerrado_ganado:    { bg: 'rgba(107,221,161,0.10)', color: '#6bdda1' },
   cerrado_perdido:   { bg: 'rgba(229,62,62,0.10)',   color: '#e53e3e' },
@@ -117,7 +121,13 @@ function lastActivityTime(lead: AirtableLead, previews: Record<string, LastMessa
 }
 
 function requiresHumanReply(lead: AirtableLead, previews: Record<string, LastMessage>) {
-  return previews[lead.RecordID]?.role === 'user';
+  const preview = previews[lead.RecordID];
+  if (preview?.role !== 'user') return false;
+  // "Marcar como respondido": descartado manualmente, salvo que el lead haya
+  // vuelto a escribir después del descarte.
+  const dismissedAt = lead.needs_reply_dismissed_at;
+  if (dismissedAt && preview.created_at && preview.created_at <= dismissedAt) return false;
+  return true;
 }
 
 function formatReplyTimer(ms: number) {
@@ -163,7 +173,7 @@ interface Toast {
   content: string;
 }
 
-export function ChatList({ initialLeads, sellerName, clientId, lastMessages, airtableBaseId, airtableTableId }: ChatListProps) {
+export function ChatList({ initialLeads, sellerName, clientId, lastMessages, airtableBaseId, airtableTableId, crmAccess }: ChatListProps) {
   const router = useRouter();
   const [leads, setLeads] = useState<AirtableLead[]>(initialLeads);
   const [newLeadIds, setNewLeadIds] = useState<Set<string>>(new Set());
@@ -511,6 +521,24 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
     router.refresh();
   }
 
+  async function markLeadAnswered(lead: AirtableLead) {
+    const dismissedAt = new Date().toISOString();
+    // Optimista: sale de "Sin responder" al instante; el polling trae el valor
+    // persistido después.
+    setLeads(prev => prev.map(l => (
+      l.RecordID === lead.RecordID ? { ...l, needs_reply_dismissed_at: dismissedAt } : l
+    )));
+    try {
+      await fetch('/api/leads/mark-answered', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId: lead.RecordID }),
+      });
+    } catch {
+      // sin drama: el polling repone el estado real
+    }
+  }
+
   const calificadosCount = counts['calificado'] ?? 0;
   const needsReplyCount = counts[NEEDS_REPLY_FILTER] ?? 0;
   const mostUrgentReplyTimer = useMemo(() => {
@@ -594,6 +622,25 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
             </svg>
             Ver mis ventas
           </button>
+          <div style={{ marginTop: 8 }}>
+            <CrmSaleButton
+              sellerMode
+              triggerStyleOverride={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 9,
+                padding: '9px 10px',
+                borderRadius: 5,
+                border: '1px solid rgba(24,93,232,0.55)',
+                background: 'rgba(24,93,232,0.85)',
+                color: '#fff',
+                fontSize: 11,
+                fontWeight: 800,
+                textAlign: 'left',
+              }}
+            />
+          </div>
           <button
             type="button"
             onClick={() => router.push('/sales/ranking')}
@@ -623,32 +670,34 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
             </svg>
             Ranking
           </button>
-          <button
-            type="button"
-            onClick={() => router.push('/crm')}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-              marginTop: 8,
-              padding: '9px 10px',
-              borderRadius: 5,
-              border: '1px solid rgba(255,255,255,0.10)',
-              background: '#12121a',
-              color: '#e4e4e8',
-              cursor: 'pointer',
-              fontSize: 11,
-              fontWeight: 800,
-              textAlign: 'left',
-            }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 3v18h18" />
-              <path d="M7 14l3-3 3 2 5-6" />
-            </svg>
-            Control CRM
-          </button>
+          {crmAccess && (
+            <button
+              type="button"
+              onClick={() => router.push('/crm')}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 9,
+                marginTop: 8,
+                padding: '9px 10px',
+                borderRadius: 5,
+                border: '1px solid rgba(255,255,255,0.10)',
+                background: '#12121a',
+                color: '#e4e4e8',
+                cursor: 'pointer',
+                fontSize: 11,
+                fontWeight: 800,
+                textAlign: 'left',
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 3v18h18" />
+                <path d="M7 14l3-3 3 2 5-6" />
+              </svg>
+              Control CRM
+            </button>
+          )}
         </div>
 
         <div style={{ height: 1, background: '#1e1e2a', margin: '0 12px 14px' }} />
@@ -738,9 +787,13 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
           Etapas
         </p>
 
-        {/* Filtros */}
-        <nav style={{ flex: 1, overflowY: 'auto' }}>
-          {FUNNEL.filter(s => s.key === 'all' || (counts[s.key] ?? 0) > 0).map((s) => {
+        {/* Filtros — se muestran TODAS las etapas (con 0 en gris) para que la
+            lista sea idéntica entre vendedores y tamaños de pantalla; ocultar
+            las vacías hacía que cada vendedor viera un sidebar distinto.
+            minHeight:0 garantiza que el nav encoja y scrollee en pantallas
+            cortas en vez de quedar recortado. */}
+        <nav style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+          {FUNNEL.filter(s => s.key === 'en_proceso' ? (counts[s.key] ?? 0) > 0 : true).map((s) => {
             const isActive = activeStage === s.key;
             const count = counts[s.key] ?? 0;
             return (
@@ -1066,6 +1119,28 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
                         }}>
                           sin responder
                         </span>
+                      )}
+                      {!isNew && needsReply && (
+                        <button
+                          type="button"
+                          title="Marcar como respondido (no necesita respuesta)"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void markLeadAnswered(lead);
+                          }}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 18, height: 18, padding: 0,
+                            borderRadius: 4,
+                            border: '1px solid rgba(107,221,161,0.35)',
+                            background: 'rgba(107,221,161,0.10)',
+                            color: '#6bdda1',
+                            cursor: 'pointer',
+                            fontSize: 11, fontWeight: 900, lineHeight: 1,
+                          }}
+                        >
+                          ✓
+                        </button>
                       )}
                       <span style={{ fontSize: 10, color: '#404050', fontFamily: MONO }}>
                         {formatTime(lastMsg?.created_at || lead.last_message_at)}

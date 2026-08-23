@@ -12,17 +12,28 @@ async function loadAttachments(messages: Message[]): Promise<Message[]> {
   const ids = messages.map(messageId);
   if (!ids.length) return messages;
 
-  const { data } = await supabase
-    .from('message_attachments')
-    .select('*')
-    .in('message_id', ids)
-    .order('created_at', { ascending: true });
+  // Vía endpoint del servidor: RLS bloquea message_attachments para el rol
+  // del navegador (la consulta directa devolvía [] y las fotos desaparecían).
+  let data: MessageAttachment[] = [];
+  try {
+    const response = await fetch('/api/message-attachments/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messageIds: ids }),
+    });
+    if (response.ok) {
+      const body = await response.json() as { attachments?: MessageAttachment[] };
+      data = body.attachments ?? [];
+    }
+  } catch {
+    // sin adjuntos este ciclo; el polling reintenta en unos segundos
+  }
 
   const byMessage = new Map<string, MessageAttachment[]>();
-  for (const attachment of (data ?? []) as MessageAttachment[]) {
-    const list = byMessage.get(attachment.message_id) ?? [];
+  for (const attachment of data) {
+    const list = byMessage.get(String(attachment.message_id)) ?? [];
     list.push(attachment);
-    byMessage.set(attachment.message_id, list);
+    byMessage.set(String(attachment.message_id), list);
   }
 
   return messages.map((message) => ({
@@ -99,13 +110,17 @@ export function useMessages(leadId: string, clientId: string) {
         setError(null);
       }
 
+      // Ventana de los N mensajes más recientes. Sin límite explícito PostgREST
+      // corta en 1000 filas: en hilos largos devolvía los 1000 MÁS VIEJOS y el
+      // polling "borraba" los mensajes nuevos que realtime acababa de mostrar.
       const { data, error: fetchError } = await supabase
         .from('messages')
         .select('*')
         .eq('lead_id', leadId)
         .eq('client_id', clientId)
-        .order('created_at', { ascending: true })
-        .order('id', { ascending: true });
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(800);
 
       if (fetchError) {
         if (options.initial) setError(fetchError.message);

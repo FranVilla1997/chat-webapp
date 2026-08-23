@@ -1,91 +1,23 @@
-import crypto from 'crypto';
-import { cookies } from 'next/headers';
-import { createSupabaseServerClient } from './supabase-server';
+import { createSupabaseServerClient, createSupabaseServiceClient } from './supabase-server';
 
-export const CRM_ACCESS_COOKIE = 'scala_crm_access';
-const COOKIE_MAX_AGE_SECONDS = 8 * 60 * 60;
+// Acceso al CRM: SOLO usuarios con rol owner/admin en `tenant_members` — el
+// mismo boundary de autorización que usa el dashboard de Sentinel (misma
+// cuenta, mismo Supabase Auth). Reemplaza al esquema anterior de contraseña
+// compartida + cookie firmada: una contraseña compartida puede filtrarse a
+// los vendedores; el rol no.
+const CRM_ROLES = new Set(['owner', 'admin']);
 
-type CrmAccessPayload = {
-  userId: string;
-  exp: number;
-};
+export async function hasCrmAccess(userId: string): Promise<boolean> {
+  if (!userId) return false;
 
-function base64UrlEncode(value: string | Buffer) {
-  return Buffer.from(value).toString('base64url');
-}
+  const service = createSupabaseServiceClient();
+  const { data, error } = await service
+    .from('tenant_members')
+    .select('role')
+    .eq('user_id', userId);
 
-function base64UrlDecode(value: string) {
-  return Buffer.from(value, 'base64url').toString('utf8');
-}
-
-function crmSecret() {
-  return (
-    process.env.CRM_ACCESS_SECRET ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.CRM_ACCESS_PASSWORD ||
-    ''
-  );
-}
-
-export function getCrmAccessPassword() {
-  return process.env.CRM_ACCESS_PASSWORD?.trim() ?? '';
-}
-
-function signPayload(payload: string) {
-  const secret = crmSecret();
-  if (!secret) return '';
-  return crypto.createHmac('sha256', secret).update(payload).digest('base64url');
-}
-
-function timingSafeEqual(a: string, b: string) {
-  const left = crypto.createHash('sha256').update(a).digest();
-  const right = crypto.createHash('sha256').update(b).digest();
-  return crypto.timingSafeEqual(left, right);
-}
-
-export function passwordMatchesCrmAccess(input: string) {
-  const expected = getCrmAccessPassword();
-  if (!expected) return false;
-  return timingSafeEqual(String(input ?? ''), expected);
-}
-
-export function createCrmAccessToken(userId: string) {
-  const payload: CrmAccessPayload = {
-    userId,
-    exp: Date.now() + COOKIE_MAX_AGE_SECONDS * 1000,
-  };
-  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
-  const signature = signPayload(encodedPayload);
-  if (!signature) return '';
-  return `${encodedPayload}.${signature}`;
-}
-
-export function hasCrmAccess(userId: string) {
-  const token = cookies().get(CRM_ACCESS_COOKIE)?.value;
-  if (!token || !userId) return false;
-
-  const [encodedPayload, signature] = token.split('.');
-  if (!encodedPayload || !signature) return false;
-
-  const expectedSignature = signPayload(encodedPayload);
-  if (!expectedSignature || !timingSafeEqual(signature, expectedSignature)) return false;
-
-  try {
-    const payload = JSON.parse(base64UrlDecode(encodedPayload)) as CrmAccessPayload;
-    return payload.userId === userId && payload.exp > Date.now();
-  } catch {
-    return false;
-  }
-}
-
-export function crmAccessCookieOptions() {
-  return {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax' as const,
-    path: '/',
-    maxAge: COOKIE_MAX_AGE_SECONDS,
-  };
+  if (error) return false;
+  return (data ?? []).some((row) => CRM_ROLES.has(String((row as { role: string | null }).role ?? '')));
 }
 
 export async function getCrmAccessState() {
@@ -96,6 +28,6 @@ export async function getCrmAccessState() {
 
   return {
     session,
-    allowed: session ? hasCrmAccess(session.user.id) : false,
+    allowed: session ? await hasCrmAccess(session.user.id) : false,
   };
 }

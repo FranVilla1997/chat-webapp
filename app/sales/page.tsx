@@ -1,8 +1,11 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getSalesBySellerName } from '@/lib/airtable';
+import { getAirtableSellers, getAllSales, getSalesBySellerName } from '@/lib/airtable';
+import { CrmSaleButton } from '@/components/crm/CrmSaleButton';
+import { BusinessSalesTable } from '@/components/sales/BusinessSalesTable';
 import { getSellerProfile } from '@/lib/auth';
+import { hasCrmAccess } from '@/lib/crm-access';
 import type { AirtableSale } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -55,10 +58,20 @@ function statusColor(status: string) {
 
 export default async function SalesPage() {
   const profile = await getSellerProfile();
+  const crmAccess = profile ? await hasCrmAccess(profile.user_id) : false;
   if (!profile) redirect('/login');
 
   const sellerName = profile.airtable_seller_name ?? profile.name ?? '';
-  const sales = sellerName ? await getSalesBySellerName(sellerName) : [];
+  // El dueño (rol owner/admin) ve TODAS las ventas del negocio, con vendedor;
+  // cada vendedor sigue viendo solo las suyas.
+  const sales = crmAccess
+    ? await getAllSales()
+    : sellerName
+      ? await getSalesBySellerName(sellerName)
+      : [];
+  const sellerOptions = crmAccess
+    ? (await getAirtableSellers().catch(() => [])).filter((seller) => seller.active).map((seller) => ({ id: seller.id, name: seller.name }))
+    : [];
   const totalAmount = sales.reduce((sum, sale) => sum + (sale.amount || 0), 0);
   const confirmedSales = sales.filter((sale) => sale.status.toLowerCase().includes('confirm'));
   const confirmedAmount = confirmedSales.reduce((sum, sale) => sum + (sale.amount || 0), 0);
@@ -104,7 +117,7 @@ export default async function SalesPage() {
             </p>
           </div>
           <h1 style={{ margin: 0, fontSize: 32, lineHeight: 1.05, letterSpacing: '-0.02em' }}>
-            Ventas de {sellerName || 'vendedor'}
+            {crmAccess ? 'Ventas del negocio' : `Ventas de ${sellerName || 'vendedor'}`}
           </h1>
           <p style={{ margin: '8px 0 0', color: '#848494', fontSize: 13 }}>
             Ordenadas por fecha de compra, de la mas reciente a la mas antigua.
@@ -112,24 +125,26 @@ export default async function SalesPage() {
         </div>
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <Link
-            href="/crm"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              border: '1px solid rgba(24,93,232,0.28)',
-              background: 'rgba(24,93,232,0.08)',
-              color: '#8ab4ff',
-              borderRadius: 6,
-              padding: '10px 14px',
-              textDecoration: 'none',
-              fontSize: 12,
-              fontWeight: 800,
-            }}
-          >
-            Control CRM
-          </Link>
+          {crmAccess && (
+            <Link
+              href="/crm"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                border: '1px solid rgba(24,93,232,0.28)',
+                background: 'rgba(24,93,232,0.08)',
+                color: '#8ab4ff',
+                borderRadius: 6,
+                padding: '10px 14px',
+                textDecoration: 'none',
+                fontSize: 12,
+                fontWeight: 800,
+              }}
+            >
+              Control CRM
+            </Link>
+          )}
           <Link
             href="/sales/ranking"
             style={{
@@ -148,6 +163,7 @@ export default async function SalesPage() {
           >
             Ver ranking
           </Link>
+          <CrmSaleButton sellerMode />
           <Link
             href="/chats"
             style={{
@@ -184,6 +200,26 @@ export default async function SalesPage() {
         />
       </section>
 
+      {crmAccess ? (
+        <BusinessSalesTable
+          sellers={sellerOptions}
+          rows={sales.map((sale) => ({
+            id: sale.id,
+            dateLabel: formatDate(sale.purchaseDate, { hour: undefined, minute: undefined }),
+            registeredLabel: `Reg. ${formatDate(sale.registeredAt || sale.createdTime)}`,
+            title: saleTitle(sale),
+            description: sale.description,
+            sellerName: sale.sellerName,
+            paymentMethod: sale.paymentMethod,
+            status: sale.status,
+            confirmed: sale.status.toLowerCase().includes('confirm'),
+            amount: sale.amount,
+            purchaseDate: (sale.purchaseDate || sale.registeredAt || sale.createdTime || '').slice(0, 10),
+            leadCount: sale.leadRecordIds.length,
+            receiptUrl: sale.receipts[0]?.url,
+          }))}
+        />
+      ) : (
       <section style={{
         border: '1px solid #1e1e2a',
         background: '#0a0a0f',
@@ -326,11 +362,13 @@ export default async function SalesPage() {
                     <span style={{ color: '#666676', fontSize: 10, alignSelf: 'center' }}>+{sale.receipts.length - 2}</span>
                   ) : null}
                 </div>
+
               </article>
             );
           })
         )}
       </section>
+      )}
     </main>
   );
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendWhatsAppMedia, type WhatsAppMediaType } from '@/lib/evolution';
+import { resolveActiveInstance } from '@/lib/lead-instance';
 import { whatsappMessageFields } from '@/lib/whatsapp-message-key';
 import { insertMessageWithOptionalWhatsappKey } from '@/lib/insert-message';
 
@@ -49,7 +50,8 @@ export async function POST(req: NextRequest) {
     if (signedError || !signed?.signedUrl) throw new Error(signedError?.message ?? 'No se pudo generar URL del archivo.');
 
     const mediaType = mediaTypeFromMime(mimeType);
-    const evolutionResponse = await sendWhatsAppMedia(instance, leadPhone, {
+    const activeInstance = await resolveActiveInstance(supabase, leadId, instance);
+    const evolutionResponse = await sendWhatsAppMedia(activeInstance, leadPhone, {
       mediaUrl: signed.signedUrl,
       mediaType,
       mimeType,

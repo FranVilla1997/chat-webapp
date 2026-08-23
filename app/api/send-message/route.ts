@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { sendWhatsAppMessage } from '@/lib/evolution';
 import { whatsappMessageFields } from '@/lib/whatsapp-message-key';
 import { insertMessageWithOptionalWhatsappKey } from '@/lib/insert-message';
+import { resolveActiveInstance } from '@/lib/lead-instance';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,8 +18,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // 1. Send via Evolution API
-    const evolutionResponse = await sendWhatsAppMessage(instance, leadPhone, text.trim(), clientId);
+    // 1. Send via Evolution API por la línea activa del lead
+    const activeInstance = await resolveActiveInstance(supabaseAdmin, leadId, instance);
+    const evolutionResponse = await sendWhatsAppMessage(activeInstance, leadPhone, text.trim(), clientId);
 
     // 2. Insert into messages table (lead_id = Airtable record ID)
     const { data: message, error: msgError } = await insertMessageWithOptionalWhatsappKey(

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { AuthProvider } from '@/components/auth/AuthProvider';
+import { NewVersionBanner } from '@/components/NewVersionBanner';
 
 export const metadata: Metadata = {
   title: 'SCALA Chat',
@@ -18,6 +19,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <AuthProvider initialSession={session}>
           {children}
         </AuthProvider>
+        <NewVersionBanner />
       </body>
     </html>
   );

@@ -4,6 +4,8 @@ import { createSaleRecord, getPipelineStages, updateLeadFields, updateLeadStage 
 import { cancelPendingFollowupsForLead } from '@/lib/followup-queue';
 import { hasCrmAccess } from '@/lib/crm-access';
 
+export const maxDuration = 60;
+
 const ATTACHMENTS_BUCKET = 'chat-attachments';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const PAYMENT_METHODS = new Set(['Transferencia', 'Tarjeta', 'Efectivo', 'Cheque', 'Otro']);
@@ -31,11 +33,22 @@ async function ensureBucket() {
 }
 
 function parseAmount(value: FormDataEntryValue | null): number {
-  const raw = String(value ?? '')
-    .trim()
-    .replace(/\./g, '')
-    .replace(',', '.');
-  const amount = Number(raw);
+  // Tolerante: los vendedores pegan "$ 358.065,05 ( 30% + 15% Desc)" — se
+  // extrae el primer token numérico y se interpreta en formato AR.
+  const match = String(value ?? '').match(/-?[0-9][0-9.,]*/);
+  if (!match) return NaN;
+  let token = match[0];
+  const lastComma = token.lastIndexOf(',');
+  const lastDot = token.lastIndexOf('.');
+  if (lastComma > lastDot) {
+    token = token.replace(/\./g, '').replace(',', '.');
+  } else if (lastDot > -1 && lastComma > -1) {
+    token = token.replace(/,/g, '');
+  } else if (lastDot > -1) {
+    const decimals = token.length - lastDot - 1;
+    if (decimals === 3 && token.split('.').length === 2) token = token.replace(/\./g, '');
+  }
+  const amount = Number(token.replace(/,/g, ''));
   return Number.isFinite(amount) ? amount : NaN;
 }
 
@@ -51,7 +64,7 @@ export async function POST(req: NextRequest) {
     const standalone = String(form.get('standalone') ?? '') === 'true';
     const leadId = String(form.get('leadId') ?? '').trim();
     let clientId = String(form.get('clientId') ?? '').trim();
-    const sellerRecordId = String(form.get('sellerRecordId') ?? '').trim();
+    let sellerRecordId = String(form.get('sellerRecordId') ?? '').trim();
     const description = String(form.get('description') ?? '').trim();
     const observations = String(form.get('observations') ?? '').trim();
     const purchaseDate = String(form.get('purchaseDate') ?? '').trim();
@@ -64,8 +77,17 @@ export async function POST(req: NextRequest) {
 
     if (standalone) {
       const { data: profile } = await auth.from('seller_profiles').select('*').eq('user_id', session.user.id).single();
-      if (!hasCrmAccess(session.user.id)) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      const isOwner = await hasCrmAccess(session.user.id);
+      if (!isOwner) {
+        // Vendedor: puede cargar ventas sueltas (sin lead) pero SIEMPRE a su
+        // propio nombre y con comprobante obligatorio.
+        if (!profile?.id) {
+          return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+        if (!receipts.length) {
+          return NextResponse.json({ error: 'El comprobante de pago es obligatorio.' }, { status: 400 });
+        }
+        sellerRecordId = String(profile.id);
       }
       clientId = String(profile?.client_id ?? '').trim();
     }
@@ -110,6 +132,7 @@ export async function POST(req: NextRequest) {
         return {
           url: signed.signedUrl,
           filename: fileName,
+          storagePath,
         };
       })
     );

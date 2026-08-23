@@ -9,13 +9,26 @@ type SellerOption = {
   name: string;
 };
 
+function parseAmountPreview(raw: string): number {
+  const match = String(raw).match(/-?[0-9][0-9.,]*/);
+  if (!match) return NaN;
+  let token = match[0];
+  const lastComma = token.lastIndexOf(",");
+  const lastDot = token.lastIndexOf(".");
+  if (lastComma > lastDot) token = token.replace(/\./g, "").replace(",", ".");
+  else if (lastDot > -1 && lastComma > -1) token = token.replace(/,/g, "");
+  else if (lastDot > -1 && token.length - lastDot - 1 === 3 && token.split(".").length === 2) token = token.replace(/\./g, "");
+  const amount = Number(token.replace(/,/g, ""));
+  return Number.isFinite(amount) ? amount : NaN;
+}
+
 function todayInputValue() {
   const now = new Date();
   const offset = now.getTimezoneOffset();
   return new Date(now.getTime() - offset * 60_000).toISOString().slice(0, 10);
 }
 
-export function CrmSaleButton() {
+export function CrmSaleButton({ sellerMode = false, triggerStyleOverride }: { sellerMode?: boolean; triggerStyleOverride?: CSSProperties } = {}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [sellers, setSellers] = useState<SellerOption[]>([]);
@@ -32,8 +45,10 @@ export function CrmSaleButton() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  const parsedAmount = parseAmountPreview(amount);
   const canSubmit =
-    description.trim() && amount.trim() && purchaseDate && !submitting;
+    description.trim() && amount.trim() && Number.isFinite(parsedAmount) && parsedAmount > 0 && purchaseDate && !submitting &&
+    (!sellerMode || receipts.length > 0);
   const receiptLabel = useMemo(() => {
     if (!receipts.length) return "Sin comprobantes adjuntos";
     return receipts.length === 1
@@ -54,6 +69,12 @@ export function CrmSaleButton() {
     setReceipts([]);
     setError("");
     setSuccess("");
+    if (sellerMode) {
+      // La venta va a nombre del vendedor logueado (lo fuerza el servidor);
+      // no hace falta cargar el selector.
+      setLoadingOptions(false);
+      return;
+    }
     setLoadingOptions(true);
 
     fetch("/api/sales/options")
@@ -106,8 +127,12 @@ export function CrmSaleButton() {
         saleId?: string;
         error?: string;
       };
-      if (!response.ok)
-        throw new Error(result.error ?? "No se pudo registrar la venta.");
+      if (!response.ok) {
+        if (response.status === 413) {
+          throw new Error("El comprobante es demasiado pesado (límite 4,5 MB por carga). Comprimí el archivo o cargalo en dos ventas.");
+        }
+        throw new Error(result.error ?? `No se pudo registrar la venta (error ${response.status}).`);
+      }
       setSuccess(
         `Venta registrada${result.saleId ? ` (${result.saleId})` : ""}.`,
       );
@@ -125,7 +150,7 @@ export function CrmSaleButton() {
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} style={triggerStyle}>
+      <button type="button" onClick={() => setOpen(true)} style={{ ...triggerStyle, ...triggerStyleOverride }}>
         <span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1 }}>
           +
         </span>
@@ -173,8 +198,9 @@ export function CrmSaleButton() {
                     lineHeight: 1.45,
                   }}
                 >
-                  El vendedor es opcional. Las ventas generales suman al total
-                  del negocio, pero no al ranking individual.
+                  {sellerMode
+                    ? "La venta se registra a tu nombre. El comprobante de pago es obligatorio."
+                    : "El vendedor es opcional. Las ventas generales suman al total del negocio, pero no al ranking individual."}
                 </p>
               </div>
               <button
@@ -189,26 +215,28 @@ export function CrmSaleButton() {
             </header>
 
             <div style={{ padding: 24, display: "grid", gap: 15 }}>
-              <label style={fieldStyle}>
-                <span style={labelStyle}>Vendedor responsable (opcional)</span>
-                <select
-                  value={sellerRecordId}
-                  onChange={(event) => setSellerRecordId(event.target.value)}
-                  disabled={loadingOptions || submitting}
-                  style={inputStyle}
-                >
-                  <option value="">
-                    {loadingOptions
-                      ? "Cargando vendedores..."
-                      : "Venta general - sin vendedor"}
-                  </option>
-                  {sellers.map((seller) => (
-                    <option key={seller.id} value={seller.id}>
-                      {seller.name}
+              {!sellerMode && (
+                <label style={fieldStyle}>
+                  <span style={labelStyle}>Vendedor responsable (opcional)</span>
+                  <select
+                    value={sellerRecordId}
+                    onChange={(event) => setSellerRecordId(event.target.value)}
+                    disabled={loadingOptions || submitting}
+                    style={inputStyle}
+                  >
+                    <option value="">
+                      {loadingOptions
+                        ? "Cargando vendedores..."
+                        : "Venta general - sin vendedor"}
                     </option>
-                  ))}
-                </select>
-              </label>
+                    {sellers.map((seller) => (
+                      <option key={seller.id} value={seller.id}>
+                        {seller.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               <label style={fieldStyle}>
                 <span style={labelStyle}>Descripcion de la venta</span>
@@ -237,6 +265,13 @@ export function CrmSaleButton() {
                     style={inputStyle}
                     required
                   />
+                  {amount.trim() ? (
+                    <span style={{ fontSize: 11, color: Number.isFinite(parsedAmount) && parsedAmount > 0 ? "#6bdda1" : "#ff8a8a" }}>
+                      {Number.isFinite(parsedAmount) && parsedAmount > 0
+                        ? `Se registrará: ${new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 2 }).format(parsedAmount)}`
+                        : "No se reconoce el monto — ingresá solo el número, ej: 358065,05"}
+                    </span>
+                  ) : null}
                 </label>
                 <label style={fieldStyle}>
                   <span style={labelStyle}>Fecha de compra</span>
@@ -280,7 +315,7 @@ export function CrmSaleButton() {
               </div>
 
               <div style={fieldStyle}>
-                <span style={labelStyle}>Comprobantes (opcional)</span>
+                <span style={labelStyle}>{sellerMode ? "Comprobante de pago (obligatorio)" : "Comprobantes (opcional)"}</span>
                 <input
                   id="crm-sale-receipts"
                   type="file"

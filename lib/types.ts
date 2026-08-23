@@ -25,8 +25,9 @@ export interface MessageAttachment {
   message_id: string;
   lead_id: string;
   client_id: string;
-  storage_bucket: string;
-  storage_path: string;
+  storage_bucket: string | null;
+  storage_path: string | null;
+  public_url?: string | null;
   media_type: MessageAttachmentMediaType;
   mime_type: string;
   file_name: string;
@@ -123,6 +124,7 @@ export interface AirtableLead {
 
   // Mensajes
   last_message_at: string;
+  needs_reply_dismissed_at?: string;
   last_message_summary: string;
   last_message_from: string;
   total_messages: string;

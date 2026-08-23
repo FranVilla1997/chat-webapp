@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import {
   buildSellerRanking,
   currentArgentinaMonthKey,
+  getAirtableSellers,
   getAllLeads,
   getAllSales,
   saleMonthKey,
@@ -12,7 +13,10 @@ import {
 import { createSupabaseServiceClient } from "@/lib/supabase-server";
 import type { AirtableLead, AirtableSale } from "@/lib/types";
 import { CrmSaleButton } from "@/components/crm/CrmSaleButton";
+import { CrmLogoutButton } from "@/components/crm/CrmLogoutButton";
 import { CrmMonthPicker, type CrmMonthOption } from "@/components/crm/CrmMonthPicker";
+import { CrmLineaPicker, type CrmLineaOption } from "@/components/crm/CrmLineaPicker";
+import { CrmSalesList } from "@/components/crm/CrmSalesList";
 import { getSellerProfile } from "@/lib/auth";
 import { hasCrmAccess } from "@/lib/crm-access";
 
@@ -205,6 +209,7 @@ function crmAccessNextPath(searchParams?: {
 function crmMonthHref(
   month: string,
   searchParams?: {
+    linea?: string;
     airtable_base_id?: string;
     airtable_table_id?: string;
     base_id?: string;
@@ -830,6 +835,7 @@ export default async function CrmControlPage({
 }: {
   searchParams?: {
     month?: string;
+    linea?: string;
     airtable_base_id?: string;
     airtable_table_id?: string;
     base_id?: string;
@@ -838,8 +844,8 @@ export default async function CrmControlPage({
 }) {
   const profile = await getSellerProfile();
   if (!profile) redirect("/login");
-  if (!hasCrmAccess(profile.user_id)) {
-    redirect(`/crm/access?next=${encodeURIComponent(crmAccessNextPath(searchParams))}`);
+  if (!(await hasCrmAccess(profile.user_id))) {
+    redirect("/crm/access");
   }
 
   const selectedMonth = safeMonth(searchParams?.month);
@@ -919,12 +925,35 @@ export default async function CrmControlPage({
     ),
   ]);
 
-  const leads = leadsResult.data;
-  const sales = salesResult.data;
-  const messages = messagesResult.data;
-  const previousMessages = previousMessagesResult.data;
-  const followups = followupsResult.data;
-  const previousFollowups = previousFollowupsResult.data;
+  // Filtro por línea de WhatsApp: acota TODO el CRM (leads, ventas, mensajes,
+  // followups y comparativas) a los leads cuya línea activa es la elegida.
+  // Las ventas sueltas (sin lead asociado) solo aparecen en "Todas las líneas".
+  const lineaFilter = String(searchParams?.linea ?? "").trim();
+  const availableLineas = [
+    ...new Set(
+      leadsResult.data
+        .map((lead) => lead.source_instance)
+        .filter((linea): linea is string => Boolean(linea)),
+    ),
+  ].sort();
+
+  const crmSellerOptions = await getAirtableSellers().catch(() => []);
+  let leads = leadsResult.data;
+  let sales = salesResult.data;
+  let messages = messagesResult.data;
+  let previousMessages = previousMessagesResult.data;
+  let followups = followupsResult.data;
+  let previousFollowups = previousFollowupsResult.data;
+
+  if (lineaFilter) {
+    leads = leads.filter((lead) => lead.source_instance === lineaFilter);
+    const lineaLeadIds = new Set(leads.map((lead) => lead.RecordID));
+    sales = sales.filter((sale) => sale.leadRecordIds.some((id) => lineaLeadIds.has(id)));
+    messages = messages.filter((message) => lineaLeadIds.has(message.lead_id));
+    previousMessages = previousMessages.filter((message) => lineaLeadIds.has(message.lead_id));
+    followups = followups.filter((followup) => lineaLeadIds.has(followup.lead_id));
+    previousFollowups = previousFollowups.filter((followup) => lineaLeadIds.has(followup.lead_id));
+  }
   const comparisonDay = Math.max(1, range.elapsedDays);
   const previousComparisonDay = Math.min(
     previousRange.daysInMonth,
@@ -1169,6 +1198,7 @@ export default async function CrmControlPage({
   const monthOptions: CrmMonthOption[] = availableMonths.map((month) => ({
     month,
     href: crmMonthHref(month, {
+      linea: searchParams?.linea,
       airtable_base_id: searchParams?.airtable_base_id,
       airtable_table_id: searchParams?.airtable_table_id,
       base_id: searchParams?.base_id,
@@ -1265,15 +1295,13 @@ export default async function CrmControlPage({
           }}
         >
           <CrmSaleButton />
-          <Link href="/chats" style={navButtonStyle}>
-            Volver al chat
-          </Link>
           <Link href="/sales" style={navButtonStyle}>
             Ventas
           </Link>
           <Link href="/sales/ranking" style={navButtonStyle}>
             Ranking
           </Link>
+          <CrmLogoutButton />
         </div>
       </header>
 
@@ -1313,7 +1341,19 @@ export default async function CrmControlPage({
             Cambiar mes recalcula ventas, ranking y proyeccion.
           </p>
         </div>
-        <CrmMonthPicker months={monthOptions} selectedMonth={selectedMonth} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-end" }}>
+          <CrmMonthPicker months={monthOptions} selectedMonth={selectedMonth} />
+          {availableLineas.length > 1 ? (
+            <CrmLineaPicker
+              selected={lineaFilter}
+              options={["", ...availableLineas].map((linea): CrmLineaOption => ({
+                linea,
+                label: linea || "Todas las lineas",
+                href: crmMonthHref(selectedMonth, { ...searchParams, linea: linea || undefined }),
+              }))}
+            />
+          ) : null}
+        </div>
       </section>
 
       <section
@@ -1344,6 +1384,12 @@ export default async function CrmControlPage({
           detail={`Conversion estimada: ${formatPercent(conversionRate)}`}
           tone="neutral"
           trend={leadsTrend}
+        />
+        <MetricCard
+          label="Leads por dia"
+          value={formatAverage(monthLeads.length / Math.max(1, range.elapsedDays))}
+          detail={`${formatNumber(monthLeads.length)} leads en ${range.elapsedDays} ${range.elapsedDays === 1 ? "dia" : "dias"} del periodo`}
+          tone="blue"
         />
         <MetricCard
           label="Mensajes nuevos por dia"
@@ -1760,105 +1806,21 @@ export default async function CrmControlPage({
         </Panel>
       </section>
 
-      <section
-        style={{
-          border: "1px solid #1e1e2a",
-          background: "#0a0a0f",
-          borderRadius: 8,
-          overflowX: "auto",
-        }}
-      >
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "126px 1.3fr 150px 120px 120px 110px",
-            minWidth: 900,
-            gap: 12,
-            padding: "12px 14px",
-            background: "#12121a",
-            borderBottom: "1px solid #1e1e2a",
-            color: "#848494",
-            fontFamily: MONO,
-            fontSize: 10,
-            fontWeight: 900,
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
-          }}
-        >
-          <span>Fecha</span>
-          <span>Venta</span>
-          <span>Vendedor</span>
-          <span>Pago</span>
-          <span>Estado</span>
-          <span style={{ textAlign: "right" }}>Monto</span>
-        </div>
-        {latestSales.length ? (
-          latestSales.map((sale) => (
-            <article
-              key={sale.id}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "126px 1.3fr 150px 120px 120px 110px",
-                minWidth: 900,
-                gap: 12,
-                alignItems: "center",
-                padding: "13px 14px",
-                borderBottom: "1px solid #1e1e2a",
-              }}
-            >
-              <span style={{ color: "#a8a8b3", fontSize: 12 }}>
-                {dateLabel(
-                  sale.purchaseDate || sale.registeredAt || sale.createdTime,
-                )}
-              </span>
-              <strong
-                title={sale.description}
-                style={{
-                  color: "#f2f2f4",
-                  fontSize: 13,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {saleTitle(sale)}
-              </strong>
-              <span
-                style={{
-                  color: "#a8a8b3",
-                  fontSize: 12,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {sellerOfSale(sale)}
-              </span>
-              <span style={{ color: "#a8a8b3", fontSize: 12 }}>
-                {sale.paymentMethod || "-"}
-              </span>
-              <span
-                style={{
-                  color: isConfirmedSale(sale) ? "#6bdda1" : "#f59e0b",
-                  fontSize: 12,
-                  fontWeight: 800,
-                }}
-              >
-                {sale.status || "-"}
-              </span>
-              <strong
-                style={{ textAlign: "right", color: "#f2f2f4", fontSize: 13 }}
-              >
-                {formatCurrency(sale.amount)}
-              </strong>
-            </article>
-          ))
-        ) : (
-          <div style={{ padding: 36, textAlign: "center" }}>
-            <EmptyText>Sin ventas registradas para este periodo.</EmptyText>
-          </div>
-        )}
-      </section>
+      <CrmSalesList
+        sellers={crmSellerOptions.filter((seller) => seller.active).map((seller) => ({ id: seller.id, name: seller.name }))}
+        rows={latestSales.map((sale) => ({
+          id: sale.id,
+          dateLabel: dateLabel(sale.purchaseDate || sale.registeredAt || sale.createdTime),
+          title: saleTitle(sale),
+          description: sale.description,
+          sellerName: sellerOfSale(sale),
+          paymentMethod: sale.paymentMethod,
+          status: sale.status,
+          confirmed: isConfirmedSale(sale),
+          amount: sale.amount,
+          purchaseDate: (sale.purchaseDate || sale.registeredAt || sale.createdTime || "").slice(0, 10),
+        }))}
+      />
     </main>
   );
 }

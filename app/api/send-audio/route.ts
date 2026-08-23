@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendWhatsAppAudio } from '@/lib/evolution';
+import { resolveActiveInstance } from '@/lib/lead-instance';
 import { whatsappMessageFields } from '@/lib/whatsapp-message-key';
 import { insertMessageWithOptionalWhatsappKey } from '@/lib/insert-message';
 
@@ -18,7 +19,8 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Send audio via Evolution API
-    const evolutionResponse = await sendWhatsAppAudio(instance, leadPhone, audioBase64, clientId);
+    const activeInstance = await resolveActiveInstance(supabase, leadId, instance);
+    const evolutionResponse = await sendWhatsAppAudio(activeInstance, leadPhone, audioBase64, clientId);
 
     // 2. Insert into messages table
     const { data: message, error: msgError } = await insertMessageWithOptionalWhatsappKey(

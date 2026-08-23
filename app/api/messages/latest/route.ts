@@ -22,21 +22,27 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const leadIds = Array.isArray(body.leadIds)
-    ? body.leadIds.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0).slice(0, 150)
+    ? body.leadIds.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0).slice(0, 5000)
     : [];
 
   if (!leadIds.length) {
     return NextResponse.json({ lastMessages: {} });
   }
 
+  // Un solo query por cliente con la ventana de mensajes recientes (últimos
+  // 1000, ~días de tráfico), filtrado en memoria contra los leads pedidos.
+  // Antes se tomaban los primeros 150 leadIds de una lista ordenada por etapa:
+  // los leads de etapas tardías (ej. Propuesta enviada) nunca entraban al cupo
+  // y jamás refrescaban su preview → un lead que respondía no aparecía en
+  // "Sin responder" cuando Realtime perdía el evento.
+  const requested = new Set(leadIds);
   const service = createSupabaseServiceClient();
   const { data, error } = await service
     .from('messages')
     .select('lead_id, role, content, created_at')
     .eq('client_id', profile.client_id)
-    .in('lead_id', leadIds)
     .order('created_at', { ascending: false })
-    .limit(leadIds.length * 10);
+    .limit(1000);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -44,6 +50,7 @@ export async function POST(req: NextRequest) {
 
   const lastMessages: Record<string, LastMessage> = {};
   for (const msg of data ?? []) {
+    if (!requested.has(msg.lead_id)) continue;
     if (!lastMessages[msg.lead_id]) {
       lastMessages[msg.lead_id] = {
         content: msg.content,

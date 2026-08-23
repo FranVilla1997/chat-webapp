@@ -39,7 +39,8 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname === '/login' && session) {
-    return NextResponse.redirect(new URL('/chats', request.url));
+    // A la raíz: ahí se decide por rol (dueño → /crm, vendedor → /chats).
+    return NextResponse.redirect(new URL('/', request.url));
   }
 
   return response;

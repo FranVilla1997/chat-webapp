@@ -18,3 +18,8 @@ RRSS/
 Manual de marca/
 
 .vercel
+
+# Volcados de depuración con datos reales — nunca al repo
+att.json
+msgs.json
+tmp/

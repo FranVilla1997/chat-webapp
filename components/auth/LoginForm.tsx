@@ -23,7 +23,9 @@ export function LoginForm() {
       setError('Email o contraseña incorrectos');
       setLoading(false);
     } else {
-      const next = searchParams.get('next') ?? '/chats';
+      // Sin destino explícito, a la raíz: ahí se decide por rol
+      // (dueño → /crm, vendedor → /chats).
+      const next = searchParams.get('next') ?? '/';
       router.push(next);
       router.refresh();
     }
