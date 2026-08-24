@@ -127,7 +127,14 @@ async function allRows<T>(
 ): Promise<T[]> {
   const out: T[] = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await filters(supabase.from(table).select(select)).range(from, from + 999);
+    // El order por PK no es cosmético: paginar con range SIN order deja el
+    // orden a merced del heap de Postgres, que se mueve con cada escritura
+    // (y cada mensaje entrante actualiza su deal). Con eso, entre una página
+    // y la siguiente los límites se corren: leads repetidos en la bandeja
+    // ("Mónica Beatriz" multiplicada) y otros que desaparecen en silencio.
+    const { data, error } = await filters(supabase.from(table).select(select))
+      .order('id', { ascending: true })
+      .range(from, from + 999);
     if (error) throw new Error(`Supabase ${table}: ${error.message}`);
     out.push(...((data ?? []) as T[]));
     if (!data || data.length < 1000) break;
