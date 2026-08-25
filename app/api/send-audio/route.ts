@@ -12,7 +12,7 @@ const supabase = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const { leadPhone, leadId, clientId, instance, audioBase64, duration } = await req.json();
+    const { leadPhone, leadId, clientId, instance, audioBase64, duration, mimeType } = await req.json();
 
     if (!leadPhone || !leadId || !clientId || !instance || !audioBase64) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -36,6 +36,39 @@ export async function POST(req: NextRequest) {
     );
 
     if (msgError) throw new Error(msgError.message);
+
+    // 2b. Guardar el archivo de audio como attachment para poder reproducirlo
+    // desde el chat (antes solo quedaba el texto "Audio (Ns)" y el audio del
+    // vendedor se perdía). Best-effort: si Storage falla, el envío ya salió.
+    try {
+      const audioMime = typeof mimeType === 'string' && mimeType.startsWith('audio/')
+        ? mimeType.split(';')[0]
+        : 'audio/ogg';
+      const ext = audioMime.includes('webm') ? 'webm' : audioMime.includes('mp4') ? 'm4a' : 'ogg';
+      const storagePath = `${clientId}/${leadId}/outbound/${Date.now()}-audio.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('chat-attachments')
+        .upload(storagePath, Buffer.from(audioBase64, 'base64'), {
+          contentType: audioMime,
+          upsert: true,
+        });
+      if (uploadError) throw new Error(uploadError.message);
+
+      const { error: attachmentError } = await supabase.from('message_attachments').insert({
+        message_id: String((message as { id: string | number }).id),
+        lead_id: leadId,
+        client_id: clientId,
+        storage_bucket: 'chat-attachments',
+        storage_path: storagePath,
+        media_type: 'audio',
+        mime_type: audioMime,
+        file_name: `audio-${duration ?? 0}s.${ext}`,
+        duration_seconds: typeof duration === 'number' ? duration : null,
+      });
+      if (attachmentError) throw new Error(attachmentError.message);
+    } catch (attachErr) {
+      console.error('send-audio attachment save error:', attachErr);
+    }
 
     // 3. Insert into n8n_chat_histories for bot context
     await supabase.from('n8n_chat_histories').insert({

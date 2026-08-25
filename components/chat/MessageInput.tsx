@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 
 interface MessageInputProps {
   onSend: (text: string) => void;
-  onSendAudio: (base64: string, duration: number) => void;
+  onSendAudio: (base64: string, duration: number, mimeType?: string) => void;
   onSendFile: (file: File, caption?: string) => void;
   disabled?: boolean;
   sending?: boolean;
@@ -132,7 +132,7 @@ export function MessageInput({ onSend, onSendAudio, onSendFile, disabled, sendin
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64 = (reader.result as string).split(',')[1];
-        onSendAudio(base64, duration);
+        onSendAudio(base64, duration, mr.mimeType);
       };
       reader.readAsDataURL(blob);
       streamRef.current?.getTracks().forEach(t => t.stop());

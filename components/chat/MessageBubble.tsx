@@ -53,7 +53,14 @@ function getAttachmentDisplayType(attachment: MessageAttachment): AttachmentDisp
   return 'document';
 }
 
-function FileOpenCard({ url, attachment, reason }: { url: string; attachment: MessageAttachment; reason?: string }) {
+// Los href de "abrir" van al endpoint con ?redirect=1 (firma la URL en el
+// momento del click): las URLs pre-firmadas vencen a los 10 min y un click
+// tardío sobre un PDF daba error.
+function attachmentOpenHref(attachment: MessageAttachment) {
+  return `/api/message-attachments/${attachment.id}/signed-url?redirect=1`;
+}
+
+function FileOpenCard({ attachment, reason }: { attachment: MessageAttachment; reason?: string }) {
   return (
     <div style={{
       marginTop: 8,
@@ -70,7 +77,7 @@ function FileOpenCard({ url, attachment, reason }: { url: string; attachment: Me
       </span>
       {reason && <span style={{ color: '#848484', fontSize: 11, lineHeight: 1.35 }}>{reason}</span>}
       <a
-        href={url}
+        href={attachmentOpenHref(attachment)}
         target="_blank"
         rel="noreferrer"
         style={{
@@ -126,7 +133,6 @@ function AttachmentViewer({ attachment }: { attachment: MessageAttachment }) {
   if (renderFailed) {
     return (
       <FileOpenCard
-        url={url}
         attachment={attachment}
         reason="No se pudo previsualizar en el navegador, pero podés abrir el archivo."
       />
@@ -143,7 +149,7 @@ function AttachmentViewer({ attachment }: { attachment: MessageAttachment }) {
           onError={() => setRenderFailed(true)}
           style={{ display: 'block', width: 'min(280px, 100%)' }}
         />
-        <a href={url} target="_blank" rel="noreferrer" style={{ color: '#88adea', fontSize: 11, textDecoration: 'none' }}>
+        <a href={attachmentOpenHref(attachment)} target="_blank" rel="noreferrer" style={{ color: '#88adea', fontSize: 11, textDecoration: 'none' }}>
           Abrir audio
         </a>
       </div>
@@ -152,7 +158,7 @@ function AttachmentViewer({ attachment }: { attachment: MessageAttachment }) {
 
   if (displayType === 'image') {
     return (
-      <a href={url} target="_blank" rel="noreferrer" style={{ display: 'block', marginTop: 8 }}>
+      <a href={attachmentOpenHref(attachment)} target="_blank" rel="noreferrer" style={{ display: 'block', marginTop: 8 }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={url}
@@ -174,14 +180,14 @@ function AttachmentViewer({ attachment }: { attachment: MessageAttachment }) {
           onError={() => setRenderFailed(true)}
           style={{ display: 'block', maxWidth: 320, width: '100%', maxHeight: 260, borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)' }}
         />
-        <a href={url} target="_blank" rel="noreferrer" style={{ color: '#88adea', fontSize: 11, textDecoration: 'none' }}>
+        <a href={attachmentOpenHref(attachment)} target="_blank" rel="noreferrer" style={{ color: '#88adea', fontSize: 11, textDecoration: 'none' }}>
           Abrir video
         </a>
       </div>
     );
   }
 
-  return <FileOpenCard url={url} attachment={attachment} />;
+  return <FileOpenCard attachment={attachment} />;
 }
 
 function Attachments({ attachments }: { attachments?: MessageAttachment[] }) {

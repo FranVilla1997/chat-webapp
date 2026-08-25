@@ -9,7 +9,7 @@ interface RouteContext {
   };
 }
 
-export async function GET(_req: NextRequest, { params }: RouteContext) {
+export async function GET(req: NextRequest, { params }: RouteContext) {
   const auth = createSupabaseServerClient();
   const { data: { session } } = await auth.auth.getSession();
   if (!session) {
@@ -38,9 +38,16 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
     return NextResponse.json({ error: 'Attachment not found' }, { status: 404 });
   }
 
+  // ?redirect=1: 302 directo al archivo con URL recién firmada. Para links
+  // "Abrir archivo" del chat — la URL firmada al renderizar la burbuja vence
+  // a los 10 min y el click tardío daba error (desde el panel lateral andaba
+  // porque ahí el link se genera al momento).
+  const wantsRedirect = req.nextUrl.searchParams.get('redirect') === '1';
+
   // Los assets que envía el bot (send_media) se guardan con public_url y sin
   // storage_path: no hay nada que firmar, se sirven directo.
   if (!attachment.storage_path && attachment.public_url) {
+    if (wantsRedirect) return NextResponse.redirect(attachment.public_url, 302);
     return NextResponse.json({ url: attachment.public_url, expiresIn: null });
   }
 
@@ -52,5 +59,6 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
     return NextResponse.json({ error: signedError?.message ?? 'Could not sign media URL' }, { status: 500 });
   }
 
+  if (wantsRedirect) return NextResponse.redirect(signed.signedUrl, 302);
   return NextResponse.json({ url: signed.signedUrl, expiresIn: SIGNED_URL_TTL_SECONDS });
 }

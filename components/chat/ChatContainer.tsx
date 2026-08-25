@@ -648,7 +648,7 @@ export function ChatContainer({
   const [saleNotice, setSaleNotice]       = useState<string | null>(null);
   const [currentStage, setCurrentStage]   = useState(leadInfo?.stage ?? '');
 
-  async function handleSendAudio(base64: string, duration: number) {
+  async function handleSendAudio(base64: string, duration: number, mimeType?: string) {
     setAudioSending(true);
     setAudioError(null);
 
@@ -665,7 +665,7 @@ export function ChatContainer({
       const res = await fetch('/api/send-audio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadPhone, leadId, clientId, instance, audioBase64: base64, duration }),
+        body: JSON.stringify({ leadPhone, leadId, clientId, instance, audioBase64: base64, duration, mimeType }),
       });
       if (!res.ok) {
         const { error } = await res.json();
