@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { authorizeLead } from '@/lib/authorize-lead';
 
 const ATTACHMENTS_BUCKET = 'chat-attachments';
 
@@ -24,20 +25,29 @@ function safeFileName(name: string) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { leadId, clientId, fileName, mimeType } = await req.json() as {
+    const body = await req.json() as {
       leadId?: string;
       clientId?: string;
       fileName?: string;
       mimeType?: string;
     };
+    const { fileName, mimeType } = body;
 
-    if (!leadId || !clientId || !fileName || !mimeType) {
+    if (!fileName || !mimeType) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
     if (!mimeType.startsWith('image/') && !mimeType.startsWith('video/') && mimeType !== 'application/pdf') {
       return NextResponse.json({ error: 'Solo se permiten fotos, videos o PDF.' }, { status: 400 });
     }
+
+    // Esta ruta firma una subida al bucket privado con la service role key: sin
+    // verificar la sesión, cualquiera podía escribir en el storage de cualquier
+    // cliente eligiendo el prefijo del path. clientId y leadId salen de la base,
+    // no del body, y así el path coincide con el prefijo que valida send-file.
+    const auth = await authorizeLead(supabase, body.leadId, { requirePhone: false });
+    if (!auth.ok) return auth.response;
+    const { leadId, clientId } = auth.lead;
 
     await ensureBucket();
     const path = `${clientId}/${leadId}/${Date.now()}-${safeFileName(fileName)}`;

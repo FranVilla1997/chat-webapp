@@ -7,6 +7,9 @@ import type { Followup } from '@/hooks/useFollowups';
 interface MessageBubbleProps {
   message: Message;
   isOptimistic?: boolean;
+  /** El envío falló: el mensaje NO salió por WhatsApp. */
+  failed?: boolean;
+  onRetry?: () => void;
   followup?: Followup;
   onEdit?: (messageId: string | number, content: string) => Promise<void>;
   onDelete?: (messageId: string | number) => Promise<void>;
@@ -471,7 +474,7 @@ function MessageMetaRow({
   );
 }
 
-export function MessageBubble({ message, isOptimistic, followup, onEdit, onDelete }: MessageBubbleProps) {
+export function MessageBubble({ message, isOptimistic, failed, onRetry, followup, onEdit, onDelete }: MessageBubbleProps) {
   const { role, content, created_at, was_audio } = message;
   const hasWhatsAppKey = Boolean(message.whatsapp_message_key?.id || message.whatsapp_message_id);
   const canManage =
@@ -556,13 +559,15 @@ export function MessageBubble({ message, isOptimistic, followup, onEdit, onDelet
   }
 
   /* ── Vendedor — RIGHT, outlined ─────────────── */
+  // Un mensaje fallido se muestra a opacidad plena y marcado: atenuarlo como a
+  // uno "en vuelo" era justamente lo que lo hacía pasar por entregado.
   return (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', opacity: isOptimistic ? 0.5 : 1 }}>
+    <div style={{ display: 'flex', justifyContent: 'flex-end', opacity: isOptimistic && !failed ? 0.5 : 1 }}>
       <div style={{ maxWidth: '72%', display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
         <span style={{ ...roleLabel, color: '#6bdda1', paddingRight: 2 }}>Vos</span>
         <div style={{
-          background: '#0d1a2e',
-          border: '1px solid rgba(24,93,232,0.4)',
+          background: failed ? 'rgba(229,62,62,0.07)' : '#0d1a2e',
+          border: failed ? '1px solid rgba(229,62,62,0.5)' : '1px solid rgba(24,93,232,0.4)',
           borderRadius: '6px 4px 6px 6px',
           padding: '10px 14px',
         }}>
@@ -570,11 +575,32 @@ export function MessageBubble({ message, isOptimistic, followup, onEdit, onDelet
           <p style={{ ...msgText, color: '#e4e4e8' }}>{content}</p>
           <Attachments attachments={message.attachments} />
         </div>
-        <MessageMetaRow
-          align="right"
-          createdAt={created_at}
-          actions={<MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={canDelete ? onDelete : undefined} />}
-        />
+        {failed ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 2 }}>
+            <span style={{ fontSize: 10, color: '#e53e3e', fontFamily: MONO }}>
+              ✕ No se envió
+            </span>
+            {onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                style={{
+                  border: 'none', background: 'transparent', color: '#e53e3e',
+                  fontSize: 10, cursor: 'pointer', padding: 0, textDecoration: 'underline',
+                  fontFamily: MONO,
+                }}
+              >
+                Reintentar
+              </button>
+            )}
+          </div>
+        ) : (
+          <MessageMetaRow
+            align="right"
+            createdAt={created_at}
+            actions={<MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={canDelete ? onDelete : undefined} />}
+          />
+        )}
       </div>
     </div>
   );

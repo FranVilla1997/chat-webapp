@@ -62,7 +62,9 @@ function groupHistoryByMonth(history: SellerRankingEntry[]) {
 
 export default async function SalesRankingPage({ searchParams }: { searchParams?: { month?: string } }) {
   const profile = await getSellerProfile();
-  if (!profile) redirect('/login');
+  // Hay sesión pero no perfil: mandarlo a /login lo mete en un loop de
+  // redirects (middleware rebota /login a / con sesión). Ver app/sin-perfil.
+  if (!profile) redirect('/sin-perfil');
 
   const canSyncRanking = await hasCrmAccess(profile.user_id);
   const sellerName = profile.airtable_seller_name ?? profile.name ?? '';

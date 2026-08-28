@@ -16,6 +16,12 @@ export interface Message {
     participant?: string;
   } | null;
   attachments?: MessageAttachment[];
+  /**
+   * Solo cliente: el envío optimista falló y el mensaje NO salió por WhatsApp.
+   * Sin esto la burbuja quedaba en pantalla como enviada aunque el envío
+   * hubiera fallado, y el vendedor daba por entregado algo que nunca llegó.
+   */
+  failed?: boolean;
 }
 
 export type MessageAttachmentMediaType = 'audio' | 'image' | 'video' | 'document';

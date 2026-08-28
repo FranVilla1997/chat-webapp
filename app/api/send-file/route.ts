@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendWhatsAppMedia, type WhatsAppMediaType } from '@/lib/evolution';
 import { resolveActiveInstance } from '@/lib/lead-instance';
+import { authorizeLead } from '@/lib/authorize-lead';
 import { whatsappMessageFields } from '@/lib/whatsapp-message-key';
 import { insertMessageWithOptionalWhatsappKey } from '@/lib/insert-message';
+import { sendErrorResponse, type SendErrorContext } from '@/lib/send-error';
 
 const ATTACHMENTS_BUCKET = 'chat-attachments';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
@@ -26,8 +28,10 @@ function attachmentMediaType(mimeType: string): 'image' | 'video' | 'document' {
 }
 
 export async function POST(req: NextRequest) {
+  const context: SendErrorContext = { route: 'send-file' };
+
   try {
-    const { leadPhone, leadId, clientId, instance, caption, storagePath, fileName, mimeType } = await req.json() as {
+    const body = await req.json() as {
       leadPhone?: string;
       leadId?: string;
       clientId?: string;
@@ -37,11 +41,24 @@ export async function POST(req: NextRequest) {
       fileName?: string;
       mimeType?: string;
     };
+    const { instance, caption, storagePath, fileName, mimeType } = body;
 
-    if (!leadPhone || !leadId || !clientId || !instance || !storagePath || !fileName || !mimeType) {
+    Object.assign(context, { leadId: body.leadId, clientId: body.clientId, instance, uiInstance: instance });
+
+    if (!instance || !storagePath || !fileName || !mimeType) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    // El lead, su teléfono y el cliente salen de la base contra la sesión: del
+    // body sólo se acepta a qué lead se le escribe.
+    const auth = await authorizeLead(supabase, body.leadId, { leadPhone: body.leadPhone });
+    if (!auth.ok) return auth.response;
+    const { leadId, clientId, leadPhone } = auth.lead;
+    Object.assign(context, { leadId, clientId });
+
+    // Con clientId/leadId resueltos contra la sesión, este prefijo ya acota de
+    // verdad qué archivo del bucket se puede firmar y mandar; antes el request
+    // controlaba los dos lados de la comparación y cumplirla era trivial.
     if (!storagePath.startsWith(`${clientId}/${leadId}/`)) {
       return NextResponse.json({ error: 'Ruta de archivo inválida.' }, { status: 400 });
     }
@@ -51,6 +68,7 @@ export async function POST(req: NextRequest) {
 
     const mediaType = mediaTypeFromMime(mimeType);
     const activeInstance = await resolveActiveInstance(supabase, leadId, instance);
+    context.instance = activeInstance;
     const evolutionResponse = await sendWhatsAppMedia(activeInstance, leadPhone, {
       mediaUrl: signed.signedUrl,
       mediaType,
@@ -103,7 +121,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ message: attachment ? { ...message, attachments: [attachment] } : message });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return sendErrorResponse(err, context);
   }
 }

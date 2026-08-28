@@ -210,6 +210,14 @@ export function useMessages(leadId: string, clientId: string) {
     setMessages((prev) => sortMessages([...prev, msg]));
   }
 
+  // El envío falló: la burbuja se queda (para poder reintentar sin reescribir)
+  // pero marcada, para que no se lea como entregada.
+  function markMessageFailed(tempId: string) {
+    setMessages((prev) => prev.map((m) => (
+      String(m.id) === String(tempId) ? { ...m, failed: true } : m
+    )));
+  }
+
   function replaceOptimisticMessage(tempId: string, real: Message) {
     setMessages((prev) => sortMessages(prev.map((m) => (String(m.id) === String(tempId) ? real : m))));
   }
@@ -230,6 +238,7 @@ export function useMessages(leadId: string, clientId: string) {
     error,
     realtimeStatus,
     addOptimisticMessage,
+    markMessageFailed,
     replaceOptimisticMessage,
     updateLocalMessage,
     deleteLocalMessage,

@@ -4,6 +4,8 @@ import { sendWhatsAppMessage } from '@/lib/evolution';
 import { whatsappMessageFields } from '@/lib/whatsapp-message-key';
 import { insertMessageWithOptionalWhatsappKey } from '@/lib/insert-message';
 import { resolveActiveInstance } from '@/lib/lead-instance';
+import { authorizeLead } from '@/lib/authorize-lead';
+import { sendErrorResponse, type SendErrorContext } from '@/lib/send-error';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,15 +13,29 @@ const supabaseAdmin = createClient(
 );
 
 export async function POST(req: NextRequest) {
-  try {
-    const { leadPhone, leadId, clientId, instance, text } = await req.json();
+  // Se llena a medida que avanza el request para que el catch pueda loguear con
+  // qué lead e instancia falló.
+  const context: SendErrorContext = { route: 'send-message' };
 
-    if (!leadPhone || !leadId || !clientId || !instance || !text?.trim()) {
+  try {
+    const body = await req.json();
+    const { instance, text } = body;
+    Object.assign(context, { leadId: body.leadId, clientId: body.clientId, instance, uiInstance: instance });
+
+    if (!instance || !text?.trim()) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    // El lead, su teléfono y el cliente salen de la base contra la sesión: del
+    // body sólo se acepta a qué lead se le escribe.
+    const auth = await authorizeLead(supabaseAdmin, body.leadId, { leadPhone: body.leadPhone });
+    if (!auth.ok) return auth.response;
+    const { leadId, clientId, leadPhone } = auth.lead;
+    Object.assign(context, { leadId, clientId });
+
     // 1. Send via Evolution API por la línea activa del lead
     const activeInstance = await resolveActiveInstance(supabaseAdmin, leadId, instance);
+    context.instance = activeInstance;
     const evolutionResponse = await sendWhatsAppMessage(activeInstance, leadPhone, text.trim(), clientId);
 
     // 2. Insert into messages table (lead_id = Airtable record ID)
@@ -45,7 +61,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ message });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return sendErrorResponse(err, context);
   }
 }

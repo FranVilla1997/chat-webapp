@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { Message } from '@/lib/types';
+import { readSendFailure, type SendFailure } from '@/lib/send-failure';
 
 interface SendOptions {
   leadPhone: string;
@@ -10,11 +11,12 @@ interface SendOptions {
   instance: string;
   onOptimistic: (msg: Message) => void;
   onReplace: (tempId: string, real: Message) => void;
+  onFailed: (tempId: string) => void;
 }
 
 export function useSendMessage(opts: SendOptions) {
   const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<SendFailure | null>(null);
 
   async function sendMessage(text: string) {
     if (!text.trim()) return;
@@ -47,14 +49,20 @@ export function useSendMessage(opts: SendOptions) {
       });
 
       if (!response.ok) {
-        const { error } = await response.json();
-        throw new Error(error ?? 'Failed to send message');
+        setSendError(await readSendFailure(response));
+        opts.onFailed(tempId);
+        return;
       }
 
       const { message } = await response.json();
       opts.onReplace(tempId, message as Message);
     } catch (err) {
-      setSendError(err instanceof Error ? err.message : 'Unknown error');
+      // Fallo de red: nunca se supo si el request llegó.
+      setSendError({
+        detail: err instanceof Error ? err.message : 'Unknown error',
+        evolutionStatus: null,
+      });
+      opts.onFailed(tempId);
     } finally {
       setSending(false);
     }

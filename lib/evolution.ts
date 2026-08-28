@@ -30,6 +30,31 @@ interface EvolutionConfig {
   baseUrl: string;
   apiKey: string;
   instanceName: string;
+  // De dónde salieron las credenciales. 'env' significa que la resolución por
+  // instancia falló y se está usando la key global — ver resolveEvolutionConfig.
+  source: 'db' | 'env';
+}
+
+/**
+ * Error de un request a Evolution con lo necesario para diagnosticarlo: el
+ * status real, el cuerpo de la respuesta, la instancia que se usó y de dónde
+ * salieron las credenciales. Antes solo quedaba un string y la UI adivinaba
+ * "revisá la API key" para cualquier fallo, fuera un 401 o un 502.
+ */
+export class EvolutionError extends Error {
+  readonly status: number;
+  readonly body: string;
+  readonly instanceName: string;
+  readonly credentialSource: 'db' | 'env';
+
+  constructor(operation: string, status: number, body: string, config: EvolutionConfig) {
+    super(`Evolution API ${operation} error ${status}: ${body}`);
+    this.name = 'EvolutionError';
+    this.status = status;
+    this.body = body;
+    this.instanceName = config.instanceName;
+    this.credentialSource = config.source;
+  }
 }
 
 function normalizeBaseUrl(value: string): string {
@@ -52,7 +77,7 @@ function envConfig(instance: string): EvolutionConfig | null {
   const baseUrl = process.env.EVOLUTION_API_URL;
   const apiKey = process.env.EVOLUTION_API_KEY;
   if (!baseUrl || !apiKey) return null;
-  return { baseUrl: normalizeBaseUrl(baseUrl), apiKey, instanceName: instance.trim() };
+  return { baseUrl: normalizeBaseUrl(baseUrl), apiKey, instanceName: instance.trim(), source: 'env' };
 }
 
 function supabaseAdmin() {
@@ -77,9 +102,15 @@ function pickInstance(rows: EvolutionInstanceRow[], requested: string, clientId?
   );
 }
 
+// Devolver null acá manda el envío al fallback de env, así que cada motivo se
+// loguea por separado: "no existe la fila" y "la búsqueda falló" son problemas
+// distintos y antes eran indistinguibles desde afuera.
 async function configuredInstance(instance: string, clientId?: string): Promise<EvolutionInstanceRow | null> {
   const supabase = supabaseAdmin();
-  if (!supabase) return null;
+  if (!supabase) {
+    console.error('[evolution] sin credenciales de Supabase para resolver instancias', { instance, clientId });
+    return null;
+  }
 
   try {
     const { data, error } = await supabase
@@ -87,9 +118,25 @@ async function configuredInstance(instance: string, clientId?: string): Promise<
       .select('client_id, instance_name, display_name, base_url, api_key, is_default')
       .limit(100);
 
-    if (error) return null;
-    return pickInstance((data ?? []) as EvolutionInstanceRow[], instance, clientId);
-  } catch {
+    if (error) {
+      console.error('[evolution] falló la búsqueda en evolution_instances', {
+        instance, clientId, error: error.message,
+      });
+      return null;
+    }
+
+    const rows = (data ?? []) as EvolutionInstanceRow[];
+    const picked = pickInstance(rows, instance, clientId);
+    if (!picked) {
+      console.error('[evolution] la instancia del lead no matchea ninguna fila', {
+        instance, clientId, filasLeidas: rows.length,
+      });
+    }
+    return picked;
+  } catch (err) {
+    console.error('[evolution] excepción resolviendo la instancia', {
+      instance, clientId, error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }
@@ -101,11 +148,18 @@ async function resolveEvolutionConfig(instance: string, clientId?: string): Prom
       baseUrl: normalizeBaseUrl(configured.base_url),
       apiKey: configured.api_key,
       instanceName: configured.instance_name,
+      source: 'db',
     };
   }
 
   const fallback = envConfig(instance);
-  if (fallback) return fallback;
+  if (fallback) {
+    // Fallback ciego: si EVOLUTION_API_KEY no es la key de esta instancia, el
+    // mensaje sale con credenciales equivocadas y Evolution contesta 401. Queda
+    // logueado porque desde el envío en sí no se nota la diferencia.
+    console.error('[evolution] usando EVOLUTION_API_KEY global como fallback', { instance, clientId });
+    return fallback;
+  }
 
   throw new Error(`Evolution API no está configurada para la instancia "${instance}".`);
 }
@@ -148,7 +202,7 @@ export async function sendWhatsAppMessage(
   });
 
   if (!response.ok) {
-    throw new Error(`Evolution API error ${response.status}: ${await parseEvolutionError(response)}`);
+    throw new EvolutionError('sendText', response.status, await parseEvolutionError(response), config);
   }
 
   return parseEvolutionResponse(response);
@@ -169,7 +223,7 @@ export async function sendWhatsAppAudio(
   });
 
   if (!response.ok) {
-    throw new Error(`Evolution API audio error ${response.status}: ${await parseEvolutionError(response)}`);
+    throw new EvolutionError('audio', response.status, await parseEvolutionError(response), config);
   }
 
   return parseEvolutionResponse(response);
@@ -205,7 +259,7 @@ export async function sendWhatsAppMedia(
   });
 
   if (!response.ok) {
-    throw new Error(`Evolution API media error ${response.status}: ${await parseEvolutionError(response)}`);
+    throw new EvolutionError('media', response.status, await parseEvolutionError(response), config);
   }
 
   return parseEvolutionResponse(response);

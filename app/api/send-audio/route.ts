@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendWhatsAppAudio } from '@/lib/evolution';
 import { resolveActiveInstance } from '@/lib/lead-instance';
+import { authorizeLead } from '@/lib/authorize-lead';
 import { whatsappMessageFields } from '@/lib/whatsapp-message-key';
 import { insertMessageWithOptionalWhatsappKey } from '@/lib/insert-message';
+import { sendErrorResponse, type SendErrorContext } from '@/lib/send-error';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,15 +13,27 @@ const supabase = createClient(
 );
 
 export async function POST(req: NextRequest) {
-  try {
-    const { leadPhone, leadId, clientId, instance, audioBase64, duration, mimeType } = await req.json();
+  const context: SendErrorContext = { route: 'send-audio' };
 
-    if (!leadPhone || !leadId || !clientId || !instance || !audioBase64) {
+  try {
+    const body = await req.json();
+    const { instance, audioBase64, duration, mimeType } = body;
+    Object.assign(context, { leadId: body.leadId, clientId: body.clientId, instance, uiInstance: instance });
+
+    if (!instance || !audioBase64) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    // El lead, su teléfono y el cliente salen de la base contra la sesión: del
+    // body sólo se acepta a qué lead se le escribe.
+    const auth = await authorizeLead(supabase, body.leadId, { leadPhone: body.leadPhone });
+    if (!auth.ok) return auth.response;
+    const { leadId, clientId, leadPhone } = auth.lead;
+    Object.assign(context, { leadId, clientId });
+
     // 1. Send audio via Evolution API
     const activeInstance = await resolveActiveInstance(supabase, leadId, instance);
+    context.instance = activeInstance;
     const evolutionResponse = await sendWhatsAppAudio(activeInstance, leadPhone, audioBase64, clientId);
 
     // 2. Insert into messages table
@@ -78,7 +92,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ message });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return sendErrorResponse(err, context);
   }
 }

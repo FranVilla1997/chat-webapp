@@ -13,6 +13,7 @@ import { LeadPanel } from './LeadPanel';
 import { BotPauseControl } from './BotPauseControl';
 import { SaleModal } from './SaleModal';
 import type { LeadInfo, Message, MessageAttachment } from '@/lib/types';
+import { friendlySendError, readSendFailure, type SendFailure } from '@/lib/send-failure';
 
 interface ChatContainerProps {
   leadPhone: string;
@@ -57,16 +58,6 @@ export interface QuoteInChat {
 
 const FOLLOWUP_MESSAGE_MATCH_WINDOW_MS = 3 * 60 * 1000;
 const QUOTE_URL_PATTERN = /https?:\/\/\S*\/quotes\/[A-Za-z0-9-]+/i;
-
-function friendlySendError(error: string) {
-  const lower = error.toLowerCase();
-  if (lower.includes('evolution') || lower.includes('unauthorized') || lower.includes('401') || lower.includes('whatsapp')) {
-    return 'No se pudo enviar el mensaje por un error de conexion con WhatsApp. Revisa que la instancia del lead tenga su API key correcta.';
-  }
-  if (lower.includes('audio')) return 'No se pudo enviar el audio. Revisa la conexion e intenta nuevamente.';
-  if (lower.includes('archivo') || lower.includes('media')) return 'No se pudo enviar el archivo. Revisa la conexion e intenta nuevamente.';
-  return error;
-}
 
 type QuoteUrlItem = {
   familia: string;
@@ -629,24 +620,29 @@ export function ChatContainer({
   const router = useRouter();
   const {
     messages, loading, error, realtimeStatus,
-    addOptimisticMessage, replaceOptimisticMessage, updateLocalMessage, deleteLocalMessage,
+    addOptimisticMessage, markMessageFailed, replaceOptimisticMessage, updateLocalMessage, deleteLocalMessage,
   } = useMessages(leadId, clientId);
 
   const { sendMessage, sending, sendError } = useSendMessage({
     leadPhone, leadId, clientId, instance,
     onOptimistic: addOptimisticMessage,
     onReplace: replaceOptimisticMessage,
+    onFailed: markMessageFailed,
   });
 
   const [audioSending, setAudioSending] = useState(false);
-  const [audioError, setAudioError]     = useState<string | null>(null);
+  const [audioError, setAudioError]     = useState<SendFailure | null>(null);
   const [fileSending, setFileSending]   = useState(false);
-  const [fileError, setFileError]       = useState<string | null>(null);
+  const [fileError, setFileError]       = useState<SendFailure | null>(null);
   const [stageUpdating, setStageUpdating] = useState(false);
   const [stageError, setStageError]       = useState<string | null>(null);
   const [saleModalOpen, setSaleModalOpen] = useState(false);
   const [saleNotice, setSaleNotice]       = useState<string | null>(null);
   const [currentStage, setCurrentStage]   = useState(leadInfo?.stage ?? '');
+  const [showErrorDetail, setShowErrorDetail] = useState(false);
+
+  // Un solo fallo de envío a la vez: el último que haya ocurrido.
+  const sendFailure = sendError ?? audioError ?? fileError;
 
   async function handleSendAudio(base64: string, duration: number, mimeType?: string) {
     setAudioSending(true);
@@ -668,13 +664,15 @@ export function ChatContainer({
         body: JSON.stringify({ leadPhone, leadId, clientId, instance, audioBase64: base64, duration, mimeType }),
       });
       if (!res.ok) {
-        const { error } = await res.json();
-        throw new Error(error ?? 'Error al enviar audio');
+        setAudioError(await readSendFailure(res));
+        markMessageFailed(tempId);
+        return;
       }
       const { message } = await res.json();
       replaceOptimisticMessage(tempId, message);
     } catch (err) {
-      setAudioError(err instanceof Error ? err.message : 'Error al enviar audio');
+      setAudioError({ detail: err instanceof Error ? err.message : 'Error al enviar audio', evolutionStatus: null });
+      markMessageFailed(tempId);
     } finally {
       setAudioSending(false);
     }
@@ -732,16 +730,25 @@ export function ChatContainer({
         }),
       });
       if (!res.ok) {
-        const { error } = await res.json();
-        throw new Error(error ?? 'Error al enviar archivo');
+        setFileError(await readSendFailure(res));
+        markMessageFailed(tempId);
+        return;
       }
       const { message } = await res.json();
       replaceOptimisticMessage(tempId, message);
     } catch (err) {
-      setFileError(err instanceof Error ? err.message : 'Error al enviar archivo');
+      setFileError({ detail: err instanceof Error ? err.message : 'Error al enviar archivo', evolutionStatus: null });
+      markMessageFailed(tempId);
     } finally {
       setFileSending(false);
     }
+  }
+
+  // Reintento de un texto que no salió: se saca la burbuja fallida y se vuelve a
+  // enviar el mismo contenido, para que el vendedor no tenga que reescribirlo.
+  async function handleRetrySend(message: Message) {
+    deleteLocalMessage(message.id);
+    await sendMessage(message.content);
   }
 
   const { followups } = useFollowups(leadId, clientId);
@@ -1096,6 +1103,12 @@ export function ChatContainer({
                   key={item.message.id}
                   message={item.message}
                   isOptimistic={String(item.message.id).startsWith('temp-')}
+                  failed={item.message.failed}
+                  onRetry={
+                    item.message.failed && !item.message.was_audio
+                      ? () => handleRetrySend(item.message)
+                      : undefined
+                  }
                   followup={followupByMessageId.get(String(item.message.id))}
                   onEdit={handleEditMessage}
                   onDelete={handleDeleteMessage}
@@ -1105,9 +1118,32 @@ export function ChatContainer({
             <div ref={bottomRef} style={{ height: 8 }} />
           </div>
 
-          {(sendError || audioError || fileError || stageError) && (
+          {(sendFailure || stageError) && (
             <div style={{ padding: '8px 24px', background: 'rgba(229,62,62,0.06)', borderTop: '1px solid rgba(229,62,62,0.15)' }}>
-              <p style={{ fontSize: 11, color: '#e53e3e' }}>{friendlySendError(sendError || audioError || fileError || stageError || '')}</p>
+              <p style={{ fontSize: 11, color: '#e53e3e', margin: 0 }}>
+                {sendFailure ? friendlySendError(sendFailure) : stageError}
+              </p>
+              {sendFailure && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowErrorDetail((value) => !value)}
+                    style={{
+                      border: 'none', background: 'transparent', color: '#e53e3e',
+                      fontSize: 10, cursor: 'pointer', padding: '4px 0', textDecoration: 'underline',
+                    }}
+                  >
+                    {showErrorDetail ? 'Ocultar detalle tecnico' : 'Ver detalle tecnico'}
+                  </button>
+                  {showErrorDetail && (
+                    <pre style={{
+                      margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                      fontSize: 10, color: 'var(--text-3)', background: 'rgba(0,0,0,0.25)',
+                      borderRadius: 6, padding: 8,
+                    }}>{sendFailure.detail}</pre>
+                  )}
+                </>
+              )}
             </div>
           )}
 

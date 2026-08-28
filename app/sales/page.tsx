@@ -59,7 +59,9 @@ function statusColor(status: string) {
 export default async function SalesPage() {
   const profile = await getSellerProfile();
   const crmAccess = profile ? await hasCrmAccess(profile.user_id) : false;
-  if (!profile) redirect('/login');
+  // Hay sesión pero no perfil: mandarlo a /login lo mete en un loop de
+  // redirects (middleware rebota /login a / con sesión). Ver app/sin-perfil.
+  if (!profile) redirect('/sin-perfil');
 
   const sellerName = profile.airtable_seller_name ?? profile.name ?? '';
   // El dueño (rol owner/admin) ve TODAS las ventas del negocio, con vendedor;

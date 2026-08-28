@@ -843,7 +843,9 @@ export default async function CrmControlPage({
   };
 }) {
   const profile = await getSellerProfile();
-  if (!profile) redirect("/login");
+  // Hay sesión pero no perfil: mandarlo a /login lo mete en un loop de
+  // redirects (middleware rebota /login a / con sesión). Ver app/sin-perfil.
+  if (!profile) redirect("/sin-perfil");
   if (!(await hasCrmAccess(profile.user_id))) {
     redirect("/crm/access");
   }

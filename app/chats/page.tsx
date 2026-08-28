@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server';
 import { getLeadsBySellerName } from '@/lib/airtable';
+import { getSellerProfile } from '@/lib/auth';
 import { hasCrmAccess } from '@/lib/crm-access';
 import { ChatList } from '@/components/chat/ChatList';
 
@@ -24,13 +25,14 @@ export default async function ChatsPage({ searchParams }: ChatsPageProps) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) redirect('/login');
 
-  const { data: profile } = await supabase
-    .from('seller_profiles')
-    .select('*')
-    .eq('user_id', session.user.id)
-    .single();
+  // El lookup vive en getSellerProfile: service client + tolerancia a
+  // duplicados, para que ni un perfil repetido ni un cambio de RLS vuelvan a
+  // dejar a los vendedores sin bandeja.
+  const profile = await getSellerProfile();
 
-  if (!profile) redirect('/login');
+  // Hay sesión pero no perfil: mandarlo a /login lo mete en un loop de
+  // redirects (middleware rebota /login a / con sesión). Ver app/sin-perfil.
+  if (!profile) redirect('/sin-perfil');
 
   const airtableBaseId = searchParams.airtable_base_id ?? searchParams.base_id;
   const airtableTableId = searchParams.airtable_table_id ?? searchParams.table_id;
