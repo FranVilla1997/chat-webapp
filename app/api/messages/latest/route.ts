@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server';
 import type { LastMessage } from '@/app/chats/page';
+import { fetchLastMessages } from '@/lib/last-messages';
 
 export async function POST(req: NextRequest) {
   const supabase = createSupabaseServerClient();
@@ -22,43 +23,16 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const leadIds = Array.isArray(body.leadIds)
-    ? body.leadIds.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0).slice(0, 5000)
+    ? body.leadIds.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0).slice(0, 20000)
     : [];
 
   if (!leadIds.length) {
     return NextResponse.json({ lastMessages: {} });
   }
 
-  // Un solo query por cliente con la ventana de mensajes recientes (últimos
-  // 1000, ~días de tráfico), filtrado en memoria contra los leads pedidos.
-  // Antes se tomaban los primeros 150 leadIds de una lista ordenada por etapa:
-  // los leads de etapas tardías (ej. Propuesta enviada) nunca entraban al cupo
-  // y jamás refrescaban su preview → un lead que respondía no aparecía en
-  // "Sin responder" cuando Realtime perdía el evento.
-  const requested = new Set(leadIds);
+  // Último mensaje por lead vía RPC (sin ventana — ver lib/last-messages.ts).
   const service = createSupabaseServiceClient();
-  const { data, error } = await service
-    .from('messages')
-    .select('lead_id, role, content, created_at')
-    .eq('client_id', profile.client_id)
-    .order('created_at', { ascending: false })
-    .limit(1000);
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  const lastMessages: Record<string, LastMessage> = {};
-  for (const msg of data ?? []) {
-    if (!requested.has(msg.lead_id)) continue;
-    if (!lastMessages[msg.lead_id]) {
-      lastMessages[msg.lead_id] = {
-        content: msg.content,
-        role: msg.role,
-        created_at: msg.created_at,
-      };
-    }
-  }
+  const lastMessages = await fetchLastMessages(service, profile.client_id, leadIds);
 
   return NextResponse.json({ lastMessages });
 }
