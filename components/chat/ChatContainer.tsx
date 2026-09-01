@@ -793,6 +793,17 @@ export function ChatContainer({
     () => mapSentFollowupsToMessages(messages, followups),
     [messages, followups]
   );
+  // Inverso del match de arriba: followup.id → texto real que salió. La
+  // tarjeta de seguimientos lo muestra en lugar de dejar que la intención
+  // configurada parezca "el mensaje" (feedback Franco 01/09).
+  const followupSentTexts = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const [messageId, followup] of followupByMessageId) {
+      const msg = messages.find((m) => String(m.id) === messageId);
+      if (msg?.content?.trim()) map.set(followup.id, msg.content);
+    }
+    return map;
+  }, [followupByMessageId, messages]);
   const quoteInChat = useMemo(() => findQuoteInChat(messages), [messages]);
   const visibleSentinelEvents = useMemo(() => {
     const covered = new Set(systemEvents.map((event) => event.category));
@@ -1166,6 +1177,7 @@ export function ChatContainer({
           <LeadPanel
             lead={{ ...enrichedLeadInfo, phone: leadPhone }}
             followups={followups}
+            followupSentTexts={followupSentTexts}
             quoteInChat={quoteInChat}
             open={effectivePanelOpen}
             onClose={() => setPanelOpen(false)}

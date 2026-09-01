@@ -15,6 +15,8 @@ interface QuoteInChat {
 interface LeadPanelProps {
   lead: LeadInfo;
   followups: Followup[];
+  /** Texto real que salió por cada followup 'sent' (matcheado por sent_at). */
+  followupSentTexts?: Map<number, string>;
   quoteInChat?: QuoteInChat | null;
   open: boolean;
   onClose: () => void;
@@ -113,7 +115,7 @@ function Divider() {
   return <div style={{ height: 1, background: '#1e1e2a' }} />;
 }
 
-function FollowupCard({ f, onCancel }: { f: Followup; onCancel?: (id: number) => Promise<void> }) {
+function FollowupCard({ f, sentText, onCancel }: { f: Followup; sentText?: string; onCancel?: (id: number) => Promise<void> }) {
   const st = getStatus(f.status);
   const past = f.status === 'pending' && isPast(f.scheduled_at);
   const [cancelling, setCancelling] = useState(false);
@@ -173,14 +175,40 @@ function FollowupCard({ f, onCancel }: { f: Followup; onCancel?: (id: number) =>
         <Pill color="#848484">{f.tone}</Pill>
       </div>
 
-      {/* Instructions */}
-      <p style={{
-        fontSize: 12, lineHeight: 1.55, color: '#848484', margin: 0,
-        wordBreak: 'break-word',
-        borderLeft: '2px solid #1e1e2a', paddingLeft: 8,
-      }}>
-        {f.instructions}
-      </p>
+      {/* Mensaje real enviado (matcheado por sent_at) */}
+      {sentText && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <span style={{ fontSize: 9, fontWeight: 700, color: '#404050', letterSpacing: '0.08em', fontFamily: MONO, textTransform: 'uppercase' }}>
+            Mensaje enviado
+          </span>
+          <p style={{
+            fontSize: 12, lineHeight: 1.55, color: '#c8c8d0', margin: 0,
+            wordBreak: 'break-word', whiteSpace: 'pre-wrap',
+            borderLeft: '2px solid #2a2a3a', paddingLeft: 8,
+          }}>
+            {sentText}
+          </p>
+        </div>
+      )}
+
+      {/* Intención configurada (la consigna, NO el mensaje) */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <span style={{ fontSize: 9, fontWeight: 700, color: '#404050', letterSpacing: '0.08em', fontFamily: MONO, textTransform: 'uppercase' }}>
+          Intención configurada
+        </span>
+        <p style={{
+          fontSize: 12, lineHeight: 1.55, color: sentText ? '#5a5a68' : '#848484', margin: 0,
+          wordBreak: 'break-word',
+          borderLeft: '2px solid #1e1e2a', paddingLeft: 8,
+        }}>
+          {f.instructions}
+        </p>
+        {f.status === 'pending' && (
+          <p style={{ fontSize: 10, color: '#404050', margin: 0, fontStyle: 'italic' }}>
+            El mensaje real se redacta al enviarlo, leyendo la conversación.
+          </p>
+        )}
+      </div>
 
       {f.cancel_reason && (
         <p style={{ fontSize: 10, color: '#404050', margin: 0, fontStyle: 'italic', fontFamily: MONO }}>
@@ -382,7 +410,7 @@ function QuoteStatusCard({ quote, isProposalStage }: { quote?: QuoteInChat | nul
   );
 }
 
-export function LeadPanel({ lead, followups, quoteInChat, open, onClose, onStageChange, onCancelFollowups }: LeadPanelProps) {
+export function LeadPanel({ lead, followups, followupSentTexts, quoteInChat, open, onClose, onStageChange, onCancelFollowups }: LeadPanelProps) {
   const phone = formatPhone(lead.phone);
   const stageBadge = lead.stage ? getStageBadge(lead.stage) : null;
   const isLeadProposalStage = normalizeStageKey(lead.stage) === PROPOSAL_STAGE;
@@ -601,7 +629,7 @@ export function LeadPanel({ lead, followups, quoteInChat, open, onClose, onStage
                 )}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {pending.map(f => <FollowupCard key={f.id} f={f} onCancel={onCancelFollowups ? cancelFollowup : undefined} />)}
+                {pending.map(f => <FollowupCard key={f.id} f={f} sentText={followupSentTexts?.get(f.id)} onCancel={onCancelFollowups ? cancelFollowup : undefined} />)}
                 {rest.length > 0 && (
                   <details>
                     <summary style={{
@@ -617,7 +645,7 @@ export function LeadPanel({ lead, followups, quoteInChat, open, onClose, onStage
                       Historial ({rest.length})
                     </summary>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-                      {rest.map(f => <FollowupCard key={f.id} f={f} />)}
+                      {rest.map(f => <FollowupCard key={f.id} f={f} sentText={followupSentTexts?.get(f.id)} />)}
                     </div>
                   </details>
                 )}
