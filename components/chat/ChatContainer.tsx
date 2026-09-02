@@ -745,13 +745,65 @@ export function ChatContainer({
   }
 
   // Reintento de un texto que no salió: se saca la burbuja fallida y se vuelve a
-  // enviar el mismo contenido, para que el vendedor no tenga que reescribirlo.
+  // enviar el mismo contenido (cita incluida, si la tenía), para que el
+  // vendedor no tenga que reescribirlo.
   async function handleRetrySend(message: Message) {
     deleteLocalMessage(message.id);
-    await sendMessage(message.content);
+    const meta = message.event_metadata as Record<string, unknown> | null | undefined;
+    const replyTo =
+      typeof meta?.reply_to_wa_id === 'string'
+        ? {
+            waId: meta.reply_to_wa_id,
+            preview: String(meta.reply_to_preview ?? ''),
+            role: String(meta.reply_to_role ?? ''),
+          }
+        : undefined;
+    await sendMessage(message.content, replyTo);
   }
 
   const { followups } = useFollowups(leadId, clientId);
+
+  // ── Responder a un mensaje específico (cita estilo WhatsApp) ──────────
+  const [replyTarget, setReplyTarget] = useState<Message | null>(null);
+  useEffect(() => {
+    setReplyTarget(null);
+  }, [leadId]);
+
+  const authorLabel = (role: string) =>
+    role === 'user' ? 'Lead' : role === 'assistant' ? 'Sentinel' : 'Vos';
+
+  // waId → mensaje cargado, para resolver la cita con el contenido vivo.
+  const messagesByWaId = useMemo(() => {
+    const map = new Map<string, Message>();
+    for (const msg of messages) {
+      const id = msg.whatsapp_message_key?.id ?? msg.whatsapp_message_id;
+      if (id) map.set(String(id), msg);
+    }
+    return map;
+  }, [messages]);
+
+  function quotedFor(message: Message): { author: string; preview: string } | null {
+    const meta = message.event_metadata as Record<string, unknown> | null | undefined;
+    const waId = typeof meta?.reply_to_wa_id === 'string' ? meta.reply_to_wa_id : null;
+    if (!waId) return null;
+    const original = messagesByWaId.get(waId);
+    if (original) return { author: authorLabel(original.role), preview: original.content };
+    const preview = typeof meta?.reply_to_preview === 'string' ? meta.reply_to_preview : '';
+    const role = typeof meta?.reply_to_role === 'string' ? meta.reply_to_role : '';
+    return preview ? { author: authorLabel(role), preview } : null;
+  }
+
+  function handleSendWithReply(text: string) {
+    const target = replyTarget;
+    setReplyTarget(null);
+    const waId = target ? (target.whatsapp_message_key?.id ?? target.whatsapp_message_id) : null;
+    void sendMessage(
+      text,
+      target && waId
+        ? { waId: String(waId), preview: target.content.slice(0, 200), role: target.role }
+        : undefined
+    );
+  }
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -1123,6 +1175,8 @@ export function ChatContainer({
                   followup={followupByMessageId.get(String(item.message.id))}
                   onEdit={handleEditMessage}
                   onDelete={handleDeleteMessage}
+                  onReply={setReplyTarget}
+                  quoted={quotedFor(item.message)}
                 />
               ))
             )}
@@ -1165,9 +1219,15 @@ export function ChatContainer({
           )}
 
           <MessageInput
-            onSend={sendMessage}
+            onSend={handleSendWithReply}
             onSendAudio={handleSendAudio}
             onSendFile={handleSendFile}
+            replyTo={
+              replyTarget
+                ? { author: authorLabel(replyTarget.role), preview: replyTarget.content }
+                : null
+            }
+            onCancelReply={() => setReplyTarget(null)}
             sending={sending || audioSending || fileSending}
           />
         </div>

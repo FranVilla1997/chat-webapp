@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 interface SendTextPayload {
   number: string;
   text: string;
+  /** Cita nativa de WhatsApp: key.id = whatsapp_message_id del mensaje citado. */
+  quoted?: { key: { id: string }; message: { conversation: string } };
 }
 
 export interface EvolutionMessageKey {
@@ -187,10 +189,14 @@ export async function sendWhatsAppMessage(
   instance: string,
   number: string,
   text: string,
-  clientId?: string
+  clientId?: string,
+  quoted?: { id: string; preview?: string }
 ): Promise<EvolutionMessageResponse> {
   const config = await resolveEvolutionConfig(instance, clientId);
   const payload: SendTextPayload = { number: normalizePhone(number), text };
+  if (quoted?.id) {
+    payload.quoted = { key: { id: quoted.id }, message: { conversation: quoted.preview ?? '' } };
+  }
 
   const response = await fetch(`${config.baseUrl}/message/sendText/${encodeURIComponent(config.instanceName)}`, {
     method: 'POST',

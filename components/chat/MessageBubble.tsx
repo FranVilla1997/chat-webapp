@@ -13,6 +13,48 @@ interface MessageBubbleProps {
   followup?: Followup;
   onEdit?: (messageId: string | number, content: string) => Promise<void>;
   onDelete?: (messageId: string | number) => Promise<void>;
+  /** Responder citando este mensaje (solo mensajes con whatsapp_message_id). */
+  onReply?: (message: Message) => void;
+  /** Cita que este mensaje lleva (resuelta por el contenedor contra los messages cargados). */
+  quoted?: { author: string; preview: string } | null;
+}
+
+/** Bloque de cita dentro de la burbuja (estilo respuesta de WhatsApp). */
+function QuotedBlock({ quoted, onDark }: { quoted: { author: string; preview: string }; onDark?: boolean }) {
+  return (
+    <div style={{
+      background: onDark ? 'rgba(0,0,0,0.22)' : 'rgba(255,255,255,0.05)',
+      borderLeft: `3px solid ${onDark ? 'rgba(255,255,255,0.55)' : '#185de8'}`,
+      borderRadius: 4, padding: '5px 9px', marginBottom: 7,
+    }}>
+      <span style={{ display: 'block', fontSize: 10, fontWeight: 700, color: onDark ? 'rgba(255,255,255,0.8)' : '#6b9aef', letterSpacing: '0.04em' }}>
+        {quoted.author}
+      </span>
+      <span style={{
+        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+        overflow: 'hidden', fontSize: 12, lineHeight: 1.4,
+        color: onDark ? 'rgba(255,255,255,0.72)' : '#a8a8b3',
+      }}>
+        {quoted.preview}
+      </span>
+    </div>
+  );
+}
+
+function ReplyLink({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        border: 'none', background: 'transparent', color: '#848484',
+        fontSize: 10, cursor: 'pointer', padding: 0, textDecoration: 'underline',
+        fontFamily: MONO,
+      }}
+    >
+      Responder
+    </button>
+  );
 }
 
 function formatTime(iso: string) {
@@ -474,9 +516,11 @@ function MessageMetaRow({
   );
 }
 
-export function MessageBubble({ message, isOptimistic, failed, onRetry, followup, onEdit, onDelete }: MessageBubbleProps) {
+export function MessageBubble({ message, isOptimistic, failed, onRetry, followup, onEdit, onDelete, onReply, quoted }: MessageBubbleProps) {
   const { role, content, created_at, was_audio } = message;
   const hasWhatsAppKey = Boolean(message.whatsapp_message_key?.id || message.whatsapp_message_id);
+  const canReply = Boolean(onReply) && hasWhatsAppKey && !isOptimistic && !String(message.id).startsWith('temp-');
+  const replyLink = canReply ? <ReplyLink onClick={() => onReply?.(message)} /> : undefined;
   const canManage =
     !isOptimistic &&
     !String(message.id).startsWith('temp-') &&
@@ -519,11 +563,12 @@ export function MessageBubble({ message, isOptimistic, failed, onRetry, followup
             borderRadius: '4px 6px 6px 6px',
             padding: '10px 14px',
           }}>
+            {quoted && <QuotedBlock quoted={quoted} />}
             {was_audio && <AudioBadge />}
             <p style={{ ...msgText, color: '#e4e4e8' }}>{content}</p>
             <Attachments attachments={message.attachments} />
           </div>
-          <MessageMetaRow align="left" createdAt={created_at} />
+          <MessageMetaRow align="left" createdAt={created_at} actions={replyLink} />
         </div>
       </div>
     );
@@ -543,6 +588,7 @@ export function MessageBubble({ message, isOptimistic, failed, onRetry, followup
             borderRadius: '6px 4px 6px 6px',
             padding: '10px 14px',
           }}>
+            {quoted && <QuotedBlock quoted={quoted} onDark />}
             {was_audio && <AudioBadge />}
             <p style={{ ...msgText, color: '#fff' }}>{content}</p>
             <Attachments attachments={message.attachments} />
@@ -551,7 +597,12 @@ export function MessageBubble({ message, isOptimistic, failed, onRetry, followup
           <MessageMetaRow
             align="right"
             createdAt={created_at}
-            actions={<MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={canDelete ? onDelete : undefined} />}
+            actions={
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
+                {replyLink}
+                <MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={canDelete ? onDelete : undefined} />
+              </div>
+            }
           />
         </div>
       </div>
@@ -571,6 +622,7 @@ export function MessageBubble({ message, isOptimistic, failed, onRetry, followup
           borderRadius: '6px 4px 6px 6px',
           padding: '10px 14px',
         }}>
+          {quoted && <QuotedBlock quoted={quoted} />}
           {was_audio && <AudioBadge />}
           <p style={{ ...msgText, color: '#e4e4e8' }}>{content}</p>
           <Attachments attachments={message.attachments} />
@@ -598,7 +650,12 @@ export function MessageBubble({ message, isOptimistic, failed, onRetry, followup
           <MessageMetaRow
             align="right"
             createdAt={created_at}
-            actions={<MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={canDelete ? onDelete : undefined} />}
+            actions={
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
+                {replyLink}
+                <MessageActions message={message} disabled={!canManage} onEdit={onEdit} onDelete={canDelete ? onDelete : undefined} />
+              </div>
+            }
           />
         )}
       </div>

@@ -33,10 +33,28 @@ export async function POST(req: NextRequest) {
     const { leadId, clientId, leadPhone } = auth.lead;
     Object.assign(context, { leadId, clientId });
 
+    // Cita opcional (responder a un mensaje específico). Solo se aceptan
+    // strings acotados; el wa id citado tiene que ser un id plausible.
+    const rawReply = body.replyTo as { waId?: unknown; preview?: unknown; role?: unknown } | undefined;
+    const replyTo =
+      rawReply && typeof rawReply.waId === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(rawReply.waId)
+        ? {
+            waId: rawReply.waId,
+            preview: typeof rawReply.preview === 'string' ? rawReply.preview.slice(0, 200) : '',
+            role: typeof rawReply.role === 'string' ? rawReply.role.slice(0, 20) : null,
+          }
+        : null;
+
     // 1. Send via Evolution API por la línea activa del lead
     const activeInstance = await resolveActiveInstance(supabaseAdmin, leadId, instance);
     context.instance = activeInstance;
-    const evolutionResponse = await sendWhatsAppMessage(activeInstance, leadPhone, text.trim(), clientId);
+    const evolutionResponse = await sendWhatsAppMessage(
+      activeInstance,
+      leadPhone,
+      text.trim(),
+      clientId,
+      replyTo ? { id: replyTo.waId, preview: replyTo.preview } : undefined
+    );
 
     // 2. Insert into messages table (lead_id = Airtable record ID)
     const { data: message, error: msgError } = await insertMessageWithOptionalWhatsappKey(
@@ -48,6 +66,15 @@ export async function POST(req: NextRequest) {
         content: text.trim(),
         was_audio: false,
         ...whatsappMessageFields(evolutionResponse),
+        ...(replyTo
+          ? {
+              event_metadata: {
+                reply_to_wa_id: replyTo.waId,
+                reply_to_preview: replyTo.preview,
+                reply_to_role: replyTo.role,
+              },
+            }
+          : {}),
       }
     );
 

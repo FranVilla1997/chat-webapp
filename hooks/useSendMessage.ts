@@ -18,7 +18,10 @@ export function useSendMessage(opts: SendOptions) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<SendFailure | null>(null);
 
-  async function sendMessage(text: string) {
+  async function sendMessage(
+    text: string,
+    replyTo?: { waId: string; preview: string; role: string } | null
+  ) {
     if (!text.trim()) return;
     setSending(true);
     setSendError(null);
@@ -32,6 +35,15 @@ export function useSendMessage(opts: SendOptions) {
       content: text,
       was_audio: false,
       created_at: new Date().toISOString(),
+      ...(replyTo
+        ? {
+            event_metadata: {
+              reply_to_wa_id: replyTo.waId,
+              reply_to_preview: replyTo.preview,
+              reply_to_role: replyTo.role,
+            },
+          }
+        : {}),
     };
     opts.onOptimistic(optimistic);
 
@@ -45,6 +57,7 @@ export function useSendMessage(opts: SendOptions) {
           clientId: opts.clientId,
           instance: opts.instance,
           text,
+          ...(replyTo ? { replyTo } : {}),
         }),
       });
 

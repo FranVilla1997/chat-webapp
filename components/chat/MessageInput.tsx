@@ -6,6 +6,9 @@ interface MessageInputProps {
   onSend: (text: string) => void;
   onSendAudio: (base64: string, duration: number, mimeType?: string) => void;
   onSendFile: (file: File, caption?: string) => void;
+  /** Cita activa: se está respondiendo a un mensaje específico. */
+  replyTo?: { author: string; preview: string } | null;
+  onCancelReply?: () => void;
   disabled?: boolean;
   sending?: boolean;
 }
@@ -40,7 +43,7 @@ function WaveformBars() {
   );
 }
 
-export function MessageInput({ onSend, onSendAudio, onSendFile, disabled, sending }: MessageInputProps) {
+export function MessageInput({ onSend, onSendAudio, onSendFile, replyTo, onCancelReply, disabled, sending }: MessageInputProps) {
   const [text, setText] = useState('');
   const [focused, setFocused] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -54,6 +57,11 @@ export function MessageInput({ onSend, onSendAudio, onSendFile, disabled, sendin
   const streamRef     = useRef<MediaStream | null>(null);
 
   const { display: timerDisplay, seconds } = useTimer(recording);
+
+  /* Al activar una cita, el foco va directo al textarea. */
+  useEffect(() => {
+    if (replyTo) textareaRef.current?.focus();
+  }, [replyTo]);
 
   /* ── Text submit ─────────────────────────── */
   function handleSubmit(e?: React.FormEvent) {
@@ -205,6 +213,37 @@ export function MessageInput({ onSend, onSendAudio, onSendFile, disabled, sendin
   /* ── Render: normal mode ─────────────────── */
   return (
     <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(6,6,12,0.98)', padding: '14px 24px 20px' }}>
+      {replyTo && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          background: 'rgba(24,93,232,0.08)',
+          border: '1px solid rgba(24,93,232,0.25)',
+          borderLeft: '3px solid #185de8',
+          borderRadius: 8, padding: '7px 10px', marginBottom: 8,
+        }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#185de8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              Respondiendo a {replyTo.author}
+            </span>
+            <span style={{
+              display: 'block', fontSize: 12, color: '#a8a8b3',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>
+              {replyTo.preview}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onCancelReply}
+            aria-label="Cancelar respuesta"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.45)', padding: 2, lineHeight: 1, flexShrink: 0 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+            </svg>
+          </button>
+        </div>
+      )}
       <div style={{
         display: 'flex', alignItems: 'flex-end', gap: 8,
         background: 'rgba(255,255,255,0.04)',

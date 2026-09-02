@@ -17,6 +17,12 @@ export interface Message {
   } | null;
   attachments?: MessageAttachment[];
   /**
+   * Metadatos del mensaje. Para citas (responder a un mensaje específico):
+   * reply_to_wa_id (whatsapp_message_id del citado), reply_to_preview
+   * (texto recortado, por si el original no está cargado), reply_to_role.
+   */
+  event_metadata?: Record<string, unknown> | null;
+  /**
    * Solo cliente: el envío optimista falló y el mensaje NO salió por WhatsApp.
    * Sin esto la burbuja quedaba en pantalla como enviada aunque el envío
    * hubiera fallado, y el vendedor daba por entregado algo que nunca llegó.
