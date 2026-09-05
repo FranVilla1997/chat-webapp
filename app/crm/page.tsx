@@ -178,6 +178,15 @@ function formatPercent(value: number) {
 
 function formatMinutes(ms: number) {
   if (!Number.isFinite(ms) || ms <= 0) return "-";
+  const totalSeconds = Math.max(1, Math.round(ms / 1000));
+  if (totalSeconds < 60) return `${totalSeconds} seg`;
+  if (totalSeconds < 10 * 60) {
+    // Con Sentinel respondiendo en ~1-3 min, el redondeo a minuto entero
+    // esconde la mejora: bajo los 10 min mostramos min + seg.
+    const wholeMinutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return seconds ? `${wholeMinutes}m ${seconds}s` : `${wholeMinutes} min`;
+  }
   const minutes = Math.round(ms / 60000);
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
