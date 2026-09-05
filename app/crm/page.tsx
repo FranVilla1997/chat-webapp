@@ -631,6 +631,10 @@ function responseStats(messages: CrmMessage[], followups: CrmFollowup[] = []) {
 
   const isFollowupMessage = buildFollowupMessageMatcher(followups);
   const responseTimes: number[] = [];
+  // Separadas: la primera respuesta se atribuye a Sentinel o al vendedor según
+  // quién contestó — antes se promediaban juntas y el bot (segundos) escondía
+  // la latencia humana (minutos/horas) y viceversa.
+  const botResponseTimes: number[] = [];
   const humanResponseTimes: number[] = [];
   let lateResponses = 0;
   let lateHumanResponses = 0;
@@ -666,6 +670,9 @@ function responseStats(messages: CrmMessage[], followups: CrmFollowup[] = []) {
         const responseTime = timestamp - pendingUserAt;
         if (responseTime >= 0 && responseTime <= RESPONSE_TIME_WINDOW_MS) {
           responseTimes.push(responseTime);
+          if (message.role === "assistant") {
+            botResponseTimes.push(responseTime);
+          }
         } else if (responseTime > RESPONSE_TIME_WINDOW_MS) {
           lateResponses += 1;
         }
@@ -699,7 +706,10 @@ function responseStats(messages: CrmMessage[], followups: CrmFollowup[] = []) {
 
   return {
     averageResponseMs: avg(responseTimes),
+    averageBotResponseMs: avg(botResponseTimes),
     averageHumanResponseMs: avg(humanResponseTimes),
+    botResponses: botResponseTimes.length,
+    humanResponses: humanResponseTimes.length,
     lateResponses,
     lateHumanResponses,
     unresolved,
@@ -1127,8 +1137,8 @@ export default async function CrmControlPage({
   const proposalToSaleRate = proposalLeads.length
     ? (confirmedMonthSales.length / proposalLeads.length) * 100
     : 0;
-  const responseTime = stats.averageResponseMs;
-  const previousResponseTime = previousStats.averageResponseMs;
+  const botResponseTime = stats.averageBotResponseMs;
+  const previousBotResponseTime = previousStats.averageBotResponseMs;
   const humanResponseTime = stats.averageHumanResponseMs;
   const previousHumanResponseTime = previousStats.averageHumanResponseMs;
   const soldTrend = metricTrend(
@@ -1146,9 +1156,9 @@ export default async function CrmControlPage({
     previousComparableMonthLeads.length,
     trendLabel,
   );
-  const responseTrend = metricTrend(
-    responseTime,
-    previousResponseTime,
+  const botResponseTrend = metricTrend(
+    botResponseTime,
+    previousBotResponseTime,
     trendLabel,
     true,
   );
@@ -1401,16 +1411,16 @@ export default async function CrmControlPage({
           trend={inboundMessagesTrend}
         />
         <MetricCard
-          label="Tiempo respuesta"
-          value={formatMinutes(responseTime)}
-          detail={`Sentinel o vendedor - ${stats.unresolved} sin responder - ${stats.lateResponses} tardias`}
+          label="Respuesta Sentinel"
+          value={formatMinutes(botResponseTime)}
+          detail={`Bot en ${formatNumber(stats.botResponses)} respuestas - ${stats.unresolved} sin responder - ${stats.lateResponses} tardias`}
           tone={stats.unresolved ? "warm" : "green"}
-          trend={responseTrend}
+          trend={botResponseTrend}
         />
         <MetricCard
           label="Respuesta humana"
           value={formatMinutes(humanResponseTime)}
-          detail={`Vendedor <=4h - ${stats.lateHumanResponses} tardias`}
+          detail={`Vendedor en ${formatNumber(stats.humanResponses)} respuestas (<=4h) - ${stats.lateHumanResponses} tardias`}
           tone="warm"
           trend={humanResponseTrend}
         />
@@ -1657,8 +1667,8 @@ export default async function CrmControlPage({
               value={formatNumber(messageCounts.human_agent ?? 0)}
             />
             <HealthRow
-              label="Respuesta promedio Sentinel/humano"
-              value={formatMinutes(responseTime)}
+              label="Respuesta promedio Sentinel"
+              value={formatMinutes(botResponseTime)}
             />
             <HealthRow
               label="Respuesta promedio humana"
