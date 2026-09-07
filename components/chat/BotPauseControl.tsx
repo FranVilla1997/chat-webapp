@@ -10,12 +10,19 @@ interface BotPauseControlProps {
   busy?: boolean;
 }
 
+// "Hasta que lo reanude" = pausa con vencimiento a 100 años: hereda toda la
+// protección de la pausa con ventana (los cambios de etapa no la pisan y el
+// auto-resume nunca llega) sin una semántica nueva. Solo la corta "Reanudar".
+const INDEFINITE_MINUTES = 100 * 365 * 24 * 60;
+const INDEFINITE_THRESHOLD_MS = 5 * 365 * 24 * 60 * 60 * 1000;
+
 const OPTIONS = [
   { label: '30 min', minutes: 30 },
   { label: '1 hora', minutes: 60 },
   { label: '2 horas', minutes: 120 },
   { label: '4 horas', minutes: 240 },
   { label: 'Mañana', minutes: 24 * 60 },
+  { label: 'Hasta que lo reanude', minutes: INDEFINITE_MINUTES },
 ];
 
 function pad(value: number) {
@@ -27,6 +34,7 @@ function toLocalDatetimeValue(date: Date) {
 }
 
 function formatRemaining(ms: number) {
+  if (ms > INDEFINITE_THRESHOLD_MS) return 'hasta reanudar';
   const totalMinutes = Math.max(0, Math.floor(ms / 60000));
   const days = Math.floor(totalMinutes / 1440);
   const hours = Math.floor((totalMinutes % 1440) / 60);
