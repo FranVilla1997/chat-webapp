@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "chat-webapp", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000 }
+  ]
+}

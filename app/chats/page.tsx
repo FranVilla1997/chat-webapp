@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server';
-import { getLeadsBySellerName } from '@/lib/airtable';
+import { getLeadsBySellerName, getPipelineStages } from '@/lib/airtable';
 import { getSellerProfile } from '@/lib/auth';
 import { hasCrmAccess } from '@/lib/crm-access';
 import { fetchLastMessages } from '@/lib/last-messages';
@@ -52,6 +52,11 @@ export default async function ChatsPage({ searchParams }: ChatsPageProps) {
 
   const crmAccess = await hasCrmAccess(profile.user_id);
 
+  // Etapas del pipeline del tenant para la barra lateral. Antes estaban
+  // hardcodeadas con las de Roller y un tenant con otro pipeline (SCALA)
+  // tenía leads en etapas que no se podían filtrar.
+  const stages = await getPipelineStages(profile.client_id).catch(() => []);
+
   return (
     <ChatList
       initialLeads={leads}
@@ -61,6 +66,7 @@ export default async function ChatsPage({ searchParams }: ChatsPageProps) {
       airtableBaseId={airtableBaseId}
       airtableTableId={airtableTableId}
       crmAccess={crmAccess}
+      stages={stages}
     />
   );
 }

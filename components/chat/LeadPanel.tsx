@@ -50,6 +50,11 @@ const stageColors: Record<string, { bg: string; text: string; border: string }> 
   no_responde:       { bg: 'rgba(132,132,132,0.1)', text: '#848484', border: 'rgba(132,132,132,0.2)'  },
   cerrado_ganado:    { bg: 'rgba(107,221,161,0.1)', text: '#6bdda1', border: 'rgba(107,221,161,0.25)' },
   cerrado_perdido:   { bg: 'rgba(229,62,62,0.1)',   text: '#e53e3e', border: 'rgba(229,62,62,0.2)'    },
+  explorando:          { bg: 'rgba(245,158,11,0.1)',  text: '#f59e0b', border: 'rgba(245,158,11,0.25)'  },
+  agendar_diagnostico: { bg: 'rgba(167,139,250,0.1)', text: '#a78bfa', border: 'rgba(167,139,250,0.25)' },
+  diagnostico_agendado:{ bg: 'rgba(107,221,161,0.1)', text: '#6bdda1', border: 'rgba(107,221,161,0.25)' },
+  no_asistio:          { bg: 'rgba(249,115,22,0.1)',  text: '#f97316', border: 'rgba(249,115,22,0.25)'  },
+  no_califica:         { bg: 'rgba(132,132,132,0.1)', text: '#848484', border: 'rgba(132,132,132,0.2)'  },
 };
 
 function getStatus(s: string) { return statusConfig[s] ?? statusConfig.pending; }

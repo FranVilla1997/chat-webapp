@@ -8,6 +8,7 @@ import { ChatContainer } from './ChatContainer';
 import { CrmSaleButton } from '@/components/crm/CrmSaleButton';
 import { buildLeadInfoFromAirtable } from '@/lib/utils';
 import type { AirtableLead } from '@/lib/types';
+import type { AirtableStage } from '@/lib/airtable';
 import type { LastMessage } from '@/app/chats/page';
 
 interface ChatListProps {
@@ -18,6 +19,8 @@ interface ChatListProps {
   airtableBaseId?: string;
   airtableTableId?: string;
   crmAccess?: boolean;
+  /** Etapas del pipeline del tenant (pipeline_stages), en orden. Si no vienen, se usa FUNNEL. */
+  stages?: AirtableStage[];
 }
 
 const MONO = `'SF Mono', 'Consolas', 'Liberation Mono', monospace`;
@@ -62,8 +65,12 @@ function formatStageLabel(stage?: string) {
   return key.replace(/_/g, ' ');
 }
 
-/* ── Etapas del embudo ── */
-const FUNNEL: { key: string; label: string; color: string }[] = [
+/* ── Etapas del embudo ──
+   La barra se arma con las etapas reales del tenant (pipeline_stages, ver
+   buildFunnel). FUNNEL_FALLBACK sólo se usa si el tenant no tiene etapas
+   cargadas. Las etapas que no están en STAGE_COLORS reciben un color de la
+   paleta según su posición. */
+const FUNNEL_FALLBACK: { key: string; label: string; color: string }[] = [
   { key: 'all',              label: 'Todos',            color: '#848484' },
   { key: 'calificado',       label: 'Calificado',       color: '#6bdda1' },
   { key: 'en_calificacion',  label: 'Calificando',      color: '#f59e0b' },
@@ -76,6 +83,38 @@ const FUNNEL: { key: string; label: string; color: string }[] = [
   { key: 'cerrado_perdido',  label: 'Perdido',          color: '#e53e3e' },
 ];
 
+const STAGE_COLORS: Record<string, string> = {
+  calificado: '#6bdda1', en_calificacion: '#f59e0b', [PROPOSAL_STAGE]: '#185de8',
+  en_negociacion: '#a78bfa', nuevo: '#3b7ef5', en_proceso: '#f59e0b', no_responde: '#848484',
+  cerrado_ganado: '#6bdda1', cerrado_perdido: '#e53e3e',
+  explorando: '#f59e0b', agendar_diagnostico: '#a78bfa', diagnostico_agendado: '#6bdda1',
+  no_asistio: '#f97316', no_califica: '#848484',
+};
+const STAGE_PALETTE = ['#3b7ef5', '#f59e0b', '#a78bfa', '#6bdda1', '#f97316', '#22d3ee', '#e879f9'];
+
+// Labels cortos para las claves históricas: el display_name de Roller es largo
+// ("Calificado - Armar Presupuesto") y en la barra siempre se mostró corto.
+const SHORT_LABELS: Record<string, string> = {
+  calificado: 'Calificado', en_calificacion: 'Calificando', [PROPOSAL_STAGE]: 'Propuesta enviada',
+  en_negociacion: 'En negociación', nuevo: 'Nuevo', en_proceso: 'En proceso', no_responde: 'No responde',
+  cerrado_ganado: 'Ganado', cerrado_perdido: 'Perdido',
+};
+
+function buildFunnel(stages?: AirtableStage[]) {
+  if (!stages || stages.length === 0) return FUNNEL_FALLBACK;
+  const seen = new Set<string>();
+  const out: { key: string; label: string; color: string }[] = [{ key: 'all', label: 'Todos', color: '#848484' }];
+  stages.forEach((st, i) => {
+    const key = normalizeStageKey(st.name);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    // "Nuevo · Publicidad o formulario" → "Nuevo": la barra no tiene lugar para el detalle.
+    const label = SHORT_LABELS[key] ?? st.displayName.split('·')[0].trim();
+    out.push({ key, label, color: STAGE_COLORS[key] ?? STAGE_PALETTE[i % STAGE_PALETTE.length] });
+  });
+  return out;
+}
+
 const STAGE_BADGE: Record<string, { bg: string; color: string }> = {
   calificado:        { bg: 'rgba(107,221,161,0.10)', color: '#6bdda1' },
   en_calificacion:   { bg: 'rgba(245,158,11,0.10)',  color: '#f59e0b' },
@@ -87,6 +126,11 @@ const STAGE_BADGE: Record<string, { bg: string; color: string }> = {
   no_responde:       { bg: 'rgba(132,132,132,0.10)', color: '#848484' },
   cerrado_ganado:    { bg: 'rgba(107,221,161,0.10)', color: '#6bdda1' },
   cerrado_perdido:   { bg: 'rgba(229,62,62,0.10)',   color: '#e53e3e' },
+  explorando:          { bg: 'rgba(245,158,11,0.10)',  color: '#f59e0b' },
+  agendar_diagnostico: { bg: 'rgba(167,139,250,0.10)', color: '#a78bfa' },
+  diagnostico_agendado:{ bg: 'rgba(107,221,161,0.10)', color: '#6bdda1' },
+  no_asistio:          { bg: 'rgba(249,115,22,0.10)',  color: '#f97316' },
+  no_califica:         { bg: 'rgba(132,132,132,0.10)', color: '#848484' },
 };
 
 function formatTime(iso: string) {
@@ -173,8 +217,9 @@ interface Toast {
   content: string;
 }
 
-export function ChatList({ initialLeads, sellerName, clientId, lastMessages, airtableBaseId, airtableTableId, crmAccess }: ChatListProps) {
+export function ChatList({ initialLeads, sellerName, clientId, lastMessages, airtableBaseId, airtableTableId, crmAccess, stages }: ChatListProps) {
   const router = useRouter();
+  const FUNNEL = useMemo(() => buildFunnel(stages), [stages]);
   const [leads, setLeads] = useState<AirtableLead[]>(initialLeads);
   const [newLeadIds, setNewLeadIds] = useState<Set<string>>(new Set());
   const [activeStage, setActiveStage] = useState('all');
