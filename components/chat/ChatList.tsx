@@ -12,7 +12,14 @@ import type { AirtableStage } from '@/lib/airtable';
 import type { LastMessage } from '@/app/chats/page';
 
 interface ChatListProps {
+  /** Primera página (los de actividad más reciente), no la cartera entera. */
   initialLeads: AirtableLead[];
+  /** Total de leads del vendedor. */
+  initialTotal: number;
+  /** Leads por etapa ({ all, [etapa]: n }): salen del servidor, no de lo cargado. */
+  initialCounts: Record<string, number>;
+  /** Leads con mensajes recientes del cliente o del vendedor (cualquier etapa). */
+  initialRecent: AirtableLead[];
   sellerName: string | null;
   clientId: string;
   lastMessages: Record<string, LastMessage>;
@@ -50,6 +57,27 @@ const NOTIFICATION_GAIN_BOOST = 3.4;
 const PROPOSAL_STAGE = 'Propuesta enviada';
 const NEEDS_REPLY_FILTER = 'needs_reply';
 const SELLER_REPLY_LIMIT_MS = 10 * 60 * 1000;
+
+// La bandeja trabaja con una ventana de leads, no con la cartera entera: con
+// 4.600 leads por vendedora (Roller) traerlos todos en cada polling eran
+// varios MB cada 12 s y 4.600 filas redibujándose por segundo. La etapa y la
+// búsqueda se filtran en el servidor (/api/leads).
+const PAGE_SIZE = 200;
+/** Tope de leads de la ventana en memoria; más allá conviene filtrar o buscar. */
+const MAX_LOADED = 1000;
+/** Un lead que entra a la ventana sólo se marca NEW si se creó hace poco. */
+const NEW_LEAD_WINDOW_MS = 15 * 60_000;
+/** Un mensaje visto por primera vez sólo avisa si es de recién. */
+const RECENT_MESSAGE_MS = 60_000;
+
+interface LeadsPageResponse {
+  leads: AirtableLead[];
+  total: number;
+  counts: Record<string, number>;
+  /** Sólo viene cuando se pide (no en "cargar más"). */
+  recent?: AirtableLead[];
+  lastMessages: Record<string, LastMessage>;
+}
 
 function normalizeStageKey(stage?: string) {
   const value = String(stage ?? '').trim();
@@ -157,6 +185,27 @@ function safeInitial(...values: Array<string | null | undefined>) {
   return '?';
 }
 
+/**
+ * Misma regla que la búsqueda del servidor (buildLeadSearchFilter). Se usa
+ * para los leads de actividad reciente y para filtrar lo ya cargado mientras
+ * llega la respuesta.
+ */
+function matchesSearch(lead: AirtableLead, raw: string): boolean {
+  const term = raw.replace(/[,()"\\%*]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!term) return true;
+  const digits = term.replace(/\D/g, '');
+  const phoneHit = digits.length >= 3 && (lead.phone ?? '').includes(digits);
+  if (digits.length >= 3 && /^[\d\s+\-.]+$/.test(term)) return phoneHit;
+  return phoneHit ||
+    (lead.name ?? '').toLowerCase().includes(term) ||
+    (lead.whatsapp_display_name ?? '').toLowerCase().includes(term);
+}
+
+/** "Sin responder" no es una etapa: se arma sobre la ventana de todas las etapas. */
+function serverStageFor(activeStage: string) {
+  return activeStage === NEEDS_REPLY_FILTER ? 'all' : activeStage;
+}
+
 function lastActivityTime(lead: AirtableLead, previews: Record<string, LastMessage>) {
   const previewTime = previews[lead.RecordID]?.created_at;
   const leadTime = lead.last_message_at;
@@ -217,21 +266,61 @@ interface Toast {
   content: string;
 }
 
-export function ChatList({ initialLeads, sellerName, clientId, lastMessages, airtableBaseId, airtableTableId, crmAccess, stages }: ChatListProps) {
+export function ChatList({ initialLeads, initialTotal, initialCounts, initialRecent, sellerName, clientId, lastMessages, airtableBaseId, airtableTableId, crmAccess, stages }: ChatListProps) {
   const router = useRouter();
   const FUNNEL = useMemo(() => buildFunnel(stages), [stages]);
+  // leads = la ventana del filtro actual, ordenada por el servidor.
   const [leads, setLeads] = useState<AirtableLead[]>(initialLeads);
+  // recentLeads = los que tuvieron mensajes del cliente o del vendedor hace
+  // poco, de cualquier etapa. Van aparte porque la fecha por la que ordena el
+  // servidor (deals.last_message_at) sólo la actualiza el bot: sin esto, un
+  // lead que escribe con el bot en silencio quedaba fuera de la ventana. De
+  // acá sale "Sin responder".
+  const [recentLeads, setRecentLeads] = useState<AirtableLead[]>(initialRecent);
   const [newLeadIds, setNewLeadIds] = useState<Set<string>>(new Set());
   const [activeStage, setActiveStage] = useState('all');
+  const [serverCounts, setServerCounts] = useState<Record<string, number>>(initialCounts);
+  // Total del filtro actual (etapa + búsqueda), venga o no cargado entero.
+  const [total, setTotal] = useState(initialTotal);
+  const [listLoading, setListLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // A qué filtro corresponden los leads cargados (lo fija cada respuesta del servidor).
+  const [loadedQuery, setLoadedQuery] = useState({ stage: 'all', q: '' });
   const [selectedLead, setSelectedLead] = useState<AirtableLead | null>(null);
   const [msgPreviews, setMsgPreviews] = useState<Record<string, LastMessage>>(lastMessages);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [loggingOut, setLoggingOut] = useState(false);
   const [soundSettings, setSoundSettings] = useState<NotificationSoundSettings>(DEFAULT_SOUND_SETTINGS);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const leadsRef = useRef(leads);
   leadsRef.current = leads;
+  // Todo lo que hay en memoria (recientes + ventana), sin repetidos.
+  const loadedLeads = useMemo(() => {
+    const seen = new Set<string>();
+    const out: AirtableLead[] = [];
+    for (const l of [...recentLeads, ...leads]) {
+      if (seen.has(l.RecordID)) continue;
+      seen.add(l.RecordID);
+      out.push(l);
+    }
+    return out;
+  }, [recentLeads, leads]);
+  const loadedRef = useRef(loadedLeads);
+  loadedRef.current = loadedLeads;
+  // Filtro que está pidiendo la lista (lo leen el polling y los realtime).
+  const queryRef = useRef({ stage: 'all', q: '' });
+  // Cada pedido de lista toma un número; una respuesta vieja no pisa a una nueva.
+  const requestSeqRef = useRef(0);
+  // Cuántos leads de la ventana se mantienen cargados: una página, más las
+  // que se pidieron con "cargar más". El polling refresca esa misma cantidad.
+  const windowSizeRef = useRef(PAGE_SIZE);
+  const loadingMoreRef = useRef(false);
+  // Hay un cambio de filtro en vuelo: el polling y "cargar más" esperan, así
+  // sólo otro cambio de filtro puede reemplazarlo.
+  const pendingResetRef = useRef(false);
+  const listRef = useRef<HTMLDivElement | null>(null);
   const selectedLeadRef = useRef(selectedLead);
   selectedLeadRef.current = selectedLead;
   const knownPreviewTimesRef = useRef<Record<string, string>>(
@@ -341,28 +430,122 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
     showIncomingToast(lead, message.content);
   }
 
-  async function refreshLeads(options: { markNew?: boolean } = {}) {
-    const params = new URLSearchParams();
-    if (airtableBaseId) params.set('airtable_base_id', airtableBaseId);
-    if (airtableTableId) params.set('airtable_table_id', airtableTableId);
+  async function fetchLeadsPage(params: { stage: string; q: string; limit: number; offset: number; recent?: boolean }): Promise<LeadsPageResponse | null> {
+    const sp = new URLSearchParams({ limit: String(params.limit), offset: String(params.offset) });
+    if (params.stage !== 'all') sp.set('stage', params.stage);
+    if (params.q) sp.set('q', params.q);
+    if (params.recent === false) sp.set('recent', '0');
+    const res = await fetch(`/api/leads?${sp.toString()}`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    return await res.json() as LeadsPageResponse;
+  }
 
-    const res = await fetch(`/api/leads${params.size ? `?${params.toString()}` : ''}`, {
-      cache: 'no-store',
-    });
-    if (!res.ok) return;
+  /** Un lead puntual que no está cargado (aviso de mensaje). 404 si no es de este vendedor. */
+  async function fetchLeadById(id: string): Promise<AirtableLead | null> {
+    const res = await fetch(`/api/leads?id=${encodeURIComponent(id)}`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const { lead } = await res.json() as { lead?: AirtableLead };
+    return lead ?? null;
+  }
 
-    const { leads: fresh } = await res.json() as { leads: AirtableLead[] };
-    const currentIds = new Set(leadsRef.current.map(l => l.RecordID));
-    const added = fresh.filter(l => !currentIds.has(l.RecordID)).map(l => l.RecordID);
+  /**
+   * Suma previews de último mensaje. Con notify avisa (sonido + toast) de los
+   * mensajes de clientes más nuevos que el último conocido; sin notify sólo
+   * registra la hora, para que un cambio de filtro no dispare avisos.
+   */
+  function ingestPreviews(
+    fresh: Record<string, LastMessage>,
+    options: { notify: boolean; allowRecentFirst?: boolean; pool?: AirtableLead[] } = { notify: false },
+  ) {
+    const pool = options.pool ?? loadedRef.current;
+    for (const [leadId, message] of Object.entries(fresh)) {
+      if (!options.notify) {
+        const known = knownPreviewTimesRef.current[leadId];
+        if (!known || new Date(message.created_at).getTime() > new Date(known).getTime()) {
+          knownPreviewTimesRef.current[leadId] = message.created_at;
+        }
+        continue;
+      }
+      const allowFirst = Boolean(options.allowRecentFirst) &&
+        Date.now() - new Date(message.created_at).getTime() < RECENT_MESSAGE_MS;
+      if (!shouldNotifyIncoming(leadId, message, { allowFirst })) continue;
+      const lead = pool.find(l => l.RecordID === leadId);
+      if (lead) notifyIncomingMessage(lead, message);
+    }
+    setMsgPreviews(prev => ({ ...prev, ...fresh }));
+  }
+
+  /**
+   * Vuelve a pedir la ventana del filtro actual. reset = cambió la etapa o la
+   * búsqueda: arranca de la primera página y no avisa de nada. Sin reset
+   * (polling, realtime) mantiene cuántos había cargados.
+   */
+  async function refreshLeads(options: { markNew?: boolean; reset?: boolean } = {}) {
+    if (!options.reset && (pendingResetRef.current || loadingMoreRef.current)) return;
+    const seq = ++requestSeqRef.current;
+    if (options.reset) {
+      pendingResetRef.current = true;
+      setListLoading(true);
+      windowSizeRef.current = PAGE_SIZE;
+    }
+    const query = { ...queryRef.current };
+    const page = await fetchLeadsPage({ ...query, limit: windowSizeRef.current, offset: 0 }).catch(() => null);
+    if (seq !== requestSeqRef.current) return;
+    if (options.reset) {
+      pendingResetRef.current = false;
+      setListLoading(false);
+      if (page && listRef.current) listRef.current.scrollTop = 0;
+    }
+    if (!page) return;
+
+    const fresh = page.leads;
+    const freshRecent = page.recent ?? [];
+    const freshAll = [...freshRecent, ...fresh];
+    const currentIds = new Set(loadedRef.current.map(l => l.RecordID));
 
     setLeads(fresh);
+    setRecentLeads(freshRecent);
+    setLoadedQuery(query);
+    setTotal(page.total);
+    setServerCounts(page.counts);
     setSelectedLead(current => {
       if (!current) return null;
-      return fresh.find(l => l.RecordID === current.RecordID) ?? current;
+      return freshAll.find(l => l.RecordID === current.RecordID) ?? current;
     });
+    ingestPreviews(page.lastMessages ?? {}, { notify: !options.reset, allowRecentFirst: true, pool: freshAll });
 
-    if (options.markNew && added.length > 0) {
-      setNewLeadIds(prev => new Set([...prev, ...added]));
+    if (options.markNew && !options.reset) {
+      // Un lead viejo que vuelve a escribir también entra a la ventana: NEW es
+      // sólo para los que se crearon recién.
+      const added = freshAll
+        .filter(l => !currentIds.has(l.RecordID) &&
+          Date.now() - new Date(l.created_at || 0).getTime() < NEW_LEAD_WINDOW_MS)
+        .map(l => l.RecordID);
+      if (added.length > 0) {
+        setNewLeadIds(prev => new Set([...prev, ...added]));
+      }
+    }
+  }
+
+  /** Trae la página siguiente del filtro actual y la suma al final. */
+  async function loadMore() {
+    if (loadingMoreRef.current || pendingResetRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    const seq = ++requestSeqRef.current;
+    try {
+      const page = await fetchLeadsPage({ ...queryRef.current, limit: PAGE_SIZE, offset: leadsRef.current.length, recent: false }).catch(() => null);
+      if (!page || seq !== requestSeqRef.current) return;
+      windowSizeRef.current = Math.min(MAX_LOADED, windowSizeRef.current + PAGE_SIZE);
+      const currentIds = new Set(leadsRef.current.map(l => l.RecordID));
+      const extra = page.leads.filter(l => !currentIds.has(l.RecordID));
+      setLeads(prev => [...prev, ...extra]);
+      setTotal(page.total);
+      setServerCounts(page.counts);
+      ingestPreviews(page.lastMessages ?? {}, { notify: false });
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
     }
   }
 
@@ -378,16 +561,21 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
   }
 
   function updateLeadStageLocally(recordId: string, stage: string) {
-    setLeads(current => current.map(lead => (
+    const apply = (current: AirtableLead[]) => current.map(lead => (
       lead.RecordID === recordId ? { ...lead, current_stage: stage, stage_changed_at: new Date().toISOString() } : lead
-    )));
+    ));
+    setLeads(apply);
+    setRecentLeads(apply);
     setSelectedLead(current => (
       current?.RecordID === recordId ? { ...current, current_stage: stage, stage_changed_at: new Date().toISOString() } : current
     ));
   }
 
   async function refreshMessagePreviews() {
-    const leadIds = leadsRef.current.map(l => l.RecordID);
+    // Sólo los leads cargados (y el abierto, si quedó fuera de la ventana).
+    const ids = new Set(loadedRef.current.map(l => l.RecordID));
+    if (selectedLeadRef.current) ids.add(selectedLeadRef.current.RecordID);
+    const leadIds = Array.from(ids);
     if (!leadIds.length) return;
 
     const res = await fetch('/api/messages/latest', {
@@ -399,14 +587,28 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
     if (!res.ok) return;
 
     const { lastMessages: fresh } = await res.json() as { lastMessages: Record<string, LastMessage> };
-    for (const [leadId, message] of Object.entries(fresh)) {
-      if (!shouldNotifyIncoming(leadId, message)) continue;
-      const lead = leadsRef.current.find(l => l.RecordID === leadId);
-      if (lead) notifyIncomingMessage(lead, message);
-    }
-
-    setMsgPreviews(prev => ({ ...prev, ...fresh }));
+    ingestPreviews(fresh, { notify: true });
   }
+
+  // La búsqueda va al servidor: se espera a que el usuario deje de tipear.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  // Cambió la etapa o la búsqueda → primera página de ese filtro. La carga
+  // inicial ya trajo la de "todos", así que el primer render no pide nada.
+  const serverStage = serverStageFor(activeStage);
+  const firstQueryRef = useRef(true);
+  useEffect(() => {
+    queryRef.current = { stage: serverStage, q: debouncedSearch };
+    if (firstQueryRef.current) {
+      firstQueryRef.current = false;
+      return;
+    }
+    refreshLeads({ reset: true }).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverStage, debouncedSearch]);
 
   useEffect(() => {
     try {
@@ -497,13 +699,30 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
           const msg = payload.new as { lead_id: string; role: string; content: string; created_at: string; client_id: string };
           if (clientId && msg.client_id && msg.client_id !== clientId) return;
 
-          const lead = leadsRef.current.find(l => l.RecordID === msg.lead_id);
+          const latestMessage = { content: msg.content, role: msg.role, created_at: msg.created_at };
+          const lead = loadedRef.current.find(l => l.RecordID === msg.lead_id);
           if (!lead) {
-            scheduleRefreshLeads({ markNew: msg.role === 'user' });
+            // Escribió un lead que no está cargado: se pide suelto para avisar
+            // igual (el servidor devuelve 404 si no es de este vendedor) y pasa
+            // a los de actividad reciente, que es donde lo trae el próximo
+            // refresco. Antes acá se recargaba la cartera entera.
+            if (msg.role !== 'user') return;
+            fetchLeadById(msg.lead_id)
+              .then((fetched) => {
+                if (!fetched) return;
+                if (shouldNotifyIncoming(msg.lead_id, latestMessage, { allowFirst: true })) {
+                  notifyIncomingMessage(fetched, latestMessage);
+                }
+                setMsgPreviews(prev => ({ ...prev, [msg.lead_id]: latestMessage }));
+                setRecentLeads(prev => (prev.some(l => l.RecordID === fetched.RecordID) ? prev : [fetched, ...prev]));
+                if (Date.now() - new Date(fetched.created_at || 0).getTime() < NEW_LEAD_WINDOW_MS) {
+                  setNewLeadIds(prev => new Set([...prev, fetched.RecordID]));
+                }
+              })
+              .catch(() => undefined);
             return;
           }
 
-          const latestMessage = { content: msg.content, role: msg.role, created_at: msg.created_at };
           if (msg.role === 'user' && shouldNotifyIncoming(msg.lead_id, latestMessage, { allowFirst: true })) {
             notifyIncomingMessage(lead, latestMessage);
           }
@@ -522,29 +741,34 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
     return () => { supabase.removeChannel(channel); };
   }, [clientId, airtableBaseId, airtableTableId]);
 
+  // Los totales por etapa vienen del servidor (son de toda la cartera).
+  // "Sin responder" se cuenta sobre lo cargado: los leads con mensajes
+  // recientes del cliente están siempre ahí, sea cual sea la etapa que se mire.
   const counts = useMemo(() => {
     const m: Record<string, number> = {
-      all: leads.length,
-      [NEEDS_REPLY_FILTER]: leads.filter((lead) => requiresHumanReply(lead, msgPreviews)).length,
+      ...serverCounts,
+      [NEEDS_REPLY_FILTER]: loadedLeads.filter((lead) => requiresHumanReply(lead, msgPreviews)).length,
     };
-    for (const l of leads) {
-      const key = normalizeStageKey(l.current_stage);
-      m[key] = (m[key] ?? 0) + 1;
-    }
     return m;
-  }, [leads, msgPreviews]);
+  }, [serverCounts, loadedLeads, msgPreviews]);
+
+  // Los leads cargados ya son los del filtro que está en pantalla (el servidor
+  // respondió para esa etapa y esa búsqueda).
+  const listSettled = loadedQuery.stage === serverStage && loadedQuery.q === search.trim();
 
   const filtered = useMemo(() => {
-    const list = leads.filter((l) => {
+    const windowIds = new Set(leads.map((l) => l.RecordID));
+    const list = loadedLeads.filter((l) => {
+      // La etapa se mira siempre acá: los de actividad reciente vienen de
+      // todas las etapas, y un lead cargado puede cambiar de etapa.
       const matchStage =
         activeStage === 'all' ||
         (activeStage === NEEDS_REPLY_FILTER && requiresHumanReply(l, msgPreviews)) ||
         normalizeStageKey(l.current_stage) === activeStage;
-      const q = search.toLowerCase();
-      const matchSearch = !q ||
-        l.whatsapp_display_name.toLowerCase().includes(q) ||
-        l.phone.includes(q) ||
-        l.name.toLowerCase().includes(q);
+      // Las filas de la ventana ya vienen buscadas por el servidor; a los de
+      // actividad reciente (y a todo mientras llega la respuesta) se les
+      // aplica la misma regla acá.
+      const matchSearch = (listSettled && windowIds.has(l.RecordID)) || matchesSearch(l, search);
       return matchStage && matchSearch;
     });
     return list.sort((a, b) => {
@@ -557,7 +781,7 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
       if (aNew !== bNew) return aNew - bNew;
       return lastActivityTime(b, msgPreviews) - lastActivityTime(a, msgPreviews);
     });
-  }, [leads, activeStage, search, newLeadIds, msgPreviews]);
+  }, [leads, loadedLeads, activeStage, search, listSettled, newLeadIds, msgPreviews]);
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -570,9 +794,11 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
     const dismissedAt = new Date().toISOString();
     // Optimista: sale de "Sin responder" al instante; el polling trae el valor
     // persistido después.
-    setLeads(prev => prev.map(l => (
+    const apply = (prev: AirtableLead[]) => prev.map(l => (
       l.RecordID === lead.RecordID ? { ...l, needs_reply_dismissed_at: dismissedAt } : l
-    )));
+    ));
+    setLeads(apply);
+    setRecentLeads(apply);
     try {
       await fetch('/api/leads/mark-answered', {
         method: 'POST',
@@ -587,14 +813,14 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
   const calificadosCount = counts['calificado'] ?? 0;
   const needsReplyCount = counts[NEEDS_REPLY_FILTER] ?? 0;
   const mostUrgentReplyTimer = useMemo(() => {
-    return leads
+    return loadedLeads
       .map((lead) => replyTimerInfo(msgPreviews[lead.RecordID], nowMs))
       .filter((timer): timer is NonNullable<typeof timer> => Boolean(timer))
       .sort((a, b) => {
         const order: Record<ReplyTimerUrgency, number> = { overdue: 0, hot: 1, warm: 2, ok: 3 };
         return order[a.urgency] - order[b.urgency];
       })[0] ?? null;
-  }, [leads, msgPreviews, nowMs]);
+  }, [loadedLeads, msgPreviews, nowMs]);
   const mostUrgentReplyColors = mostUrgentReplyTimer ? replyTimerColors(mostUrgentReplyTimer.urgency) : null;
 
   return (
@@ -1013,7 +1239,9 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 7 }}>
             <p style={{ fontSize: 10, color: '#404050', margin: 0, fontFamily: MONO, letterSpacing: '0.04em' }}>
-              {filtered.length} {filtered.length === 1 ? 'lead' : 'leads'}
+              {activeStage === NEEDS_REPLY_FILTER
+                ? `${filtered.length} ${filtered.length === 1 ? 'lead' : 'leads'}`
+                : `${listSettled ? total.toLocaleString('es-AR') : '…'} ${total === 1 && listSettled ? 'lead' : 'leads'}`}
             </p>
             {needsReplyCount > 0 && (
               <button
@@ -1039,10 +1267,10 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
         </div>
 
         {/* Lista */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div ref={listRef} style={{ flex: 1, overflowY: 'auto', opacity: listLoading ? 0.6 : 1, transition: 'opacity 0.2s' }}>
           {filtered.length === 0 ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '40%' }}>
-              <p style={{ fontSize: 12, color: '#404050' }}>Sin resultados</p>
+              <p style={{ fontSize: 12, color: '#404050' }}>{listSettled ? 'Sin resultados' : 'Cargando…'}</p>
             </div>
           ) : filtered.map((lead) => {
             const isSelected = selectedLead?.RecordID === lead.RecordID;
@@ -1231,6 +1459,33 @@ export function ChatList({ initialLeads, sellerName, clientId, lastMessages, air
               </button>
             );
           })}
+          {listSettled && activeStage !== NEEDS_REPLY_FILTER && filtered.length > 0 && leads.length < total && (
+            <div style={{ padding: '12px', textAlign: 'center' }}>
+              <p style={{ fontSize: 10, color: '#404050', margin: '0 0 8px', fontFamily: MONO, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                {Math.min(filtered.length, total).toLocaleString('es-AR')} de {total.toLocaleString('es-AR')} cargados
+              </p>
+              {leads.length < MAX_LOADED ? (
+                <button
+                  type="button"
+                  onClick={() => { loadMore().catch(() => undefined); }}
+                  disabled={loadingMore || listLoading}
+                  style={{
+                    width: '100%', padding: '8px 10px', borderRadius: 5,
+                    border: '1px solid #2a2a38', background: '#12121a',
+                    color: '#e4e4e8', fontSize: 12, fontWeight: 600,
+                    cursor: loadingMore || listLoading ? 'not-allowed' : 'pointer',
+                    opacity: loadingMore || listLoading ? 0.5 : 1,
+                  }}
+                >
+                  {loadingMore ? 'Cargando…' : `Cargar ${Math.min(PAGE_SIZE, total - leads.length)} más`}
+                </button>
+              ) : (
+                <p style={{ fontSize: 11, color: '#848484', margin: 0 }}>
+                  Para llegar a leads más viejos, filtrá por etapa o usá el buscador.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

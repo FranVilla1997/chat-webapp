@@ -285,6 +285,250 @@ export async function getLeadsBySellerName(sellerName: string, _source?: Airtabl
   });
 }
 
+// ────────────────────────────────────────────────────────────────
+// Bandeja paginada
+//
+// La bandeja ya no trae la cartera entera: con 4.600 leads por vendedora
+// (Roller, 10/2026) eran varios MB cada 12 segundos, el último mensaje de los
+// 4.600 cada 4,5 segundos y 4.600 filas redibujándose por segundo. Ahora el
+// navegador recibe una ventana; la etapa y la búsqueda se resuelven acá y los
+// totales por etapa salen de conteos.
+// ────────────────────────────────────────────────────────────────
+
+/** Leads por página de la bandeja. */
+export const LEADS_PAGE_SIZE = 200;
+/** Tope por request: PostgREST corta cualquier respuesta en 1000 filas. */
+export const LEADS_PAGE_MAX = 1000;
+
+/** Vendedor ya resuelto: se busca una vez por request y se pasa a cada consulta. */
+export interface SellerRef {
+  id: string;
+  clientId: string;
+  displayName: string;
+}
+
+export interface SellerLeadsPage {
+  leads: AirtableLead[];
+  /** Total de leads que cumplen el filtro (no sólo los de esta página). */
+  total: number;
+}
+
+export async function resolveSellerByName(sellerName: string): Promise<SellerRef | null> {
+  const supabase = createSupabaseServiceClient();
+  const name = sellerName.trim();
+  if (!name) return null;
+  const { data: sellerRows, error } = await supabase
+    .from('seller_profiles')
+    .select('id, client_id, name, airtable_seller_name, active')
+    .or(`airtable_seller_name.eq."${name}",name.eq."${name}"`);
+  if (error) throw new Error(`Supabase seller_profiles: ${error.message}`);
+  const seller = (sellerRows ?? [])[0] as SellerRow | undefined;
+  if (!seller) return null;
+  return { id: seller.id, clientId: seller.client_id, displayName: sellerDisplayName(seller) };
+}
+
+function sellerMapFor(seller: SellerRef): Map<string, SellerRow> {
+  return new Map([[seller.id, {
+    id: seller.id, client_id: seller.clientId, name: seller.displayName,
+    airtable_seller_name: seller.displayName, active: true,
+  }]]);
+}
+
+/** La barra usa 'Propuesta enviada' como clave; en deals conviven las dos formas. */
+function stageVariants(stage: string): string[] {
+  if (normalizeStageName(stage) === 'Propuesta enviada') return ['propuesta_enviada', 'Propuesta enviada'];
+  return [stage];
+}
+
+/**
+ * Filtro de búsqueda sobre contacts (sintaxis `or` de PostgREST): nombre,
+ * nombre de WhatsApp o teléfono. Se limpian los caracteres que rompen esa
+ * sintaxis; null = sin búsqueda.
+ */
+export function buildLeadSearchFilter(raw: string | null | undefined): string | null {
+  const term = (raw ?? '').replace(/[,()"\\%*]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+  if (!term) return null;
+  const digits = term.replace(/\D/g, '');
+  // "+54 9 11 3645-8883" → se busca por los dígitos, que es como está guardado.
+  if (digits.length >= 3 && /^[\d\s+\-.]+$/.test(term)) return `phone.ilike.%${digits}%`;
+  const conds = [`full_name.ilike.%${term}%`, `metadata->>whatsapp_display_name.ilike.%${term}%`];
+  if (digits.length >= 3) conds.push(`phone.ilike.%${digits}%`);
+  return conds.join(',');
+}
+
+/**
+ * UNA página de los leads del vendedor, ordenada por deals.last_message_at.
+ * Ojo: esa fecha sólo la actualizan los envíos del bot (ver
+ * getRecentlyActiveLeadsForSeller), así que esta página sola no alcanza para
+ * armar la bandeja.
+ */
+export async function getLeadsPageForSeller(
+  seller: SellerRef,
+  opts: { stage?: string | null; search?: string | null; limit?: number; offset?: number } = {},
+): Promise<SellerLeadsPage> {
+  const supabase = createSupabaseServiceClient();
+  const limit = Math.min(Math.max(1, opts.limit ?? LEADS_PAGE_SIZE), LEADS_PAGE_MAX);
+  const offset = Math.max(0, opts.offset ?? 0);
+  const searchFilter = buildLeadSearchFilter(opts.search);
+
+  // El inner join sólo hace falta para filtrar por datos del contacto.
+  let query: any = supabase
+    .from('deals')
+    .select(searchFilter ? '*, contacts!inner(*)' : '*, contacts(*)', { count: 'exact' })
+    .eq('client_id', seller.clientId)
+    .eq('assigned_seller_id', seller.id);
+
+  if (opts.stage && opts.stage !== 'all') query = query.in('stage', stageVariants(opts.stage));
+  if (searchFilter) query = query.or(searchFilter, { referencedTable: 'contacts' });
+
+  const { data, error, count } = await query
+    .order('last_message_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+  if (error) throw new Error(`Supabase deals: ${error.message}`);
+
+  const sellers = sellerMapFor(seller);
+  const leads = ((data ?? []) as DealRow[]).map((d) => mapDealToLead(d, d.contacts, sellers));
+  return { leads, total: count ?? leads.length };
+}
+
+/**
+ * Leads del vendedor con mensajes recientes del cliente o de un vendedor, el
+ * más reciente primero, de cualquier etapa.
+ *
+ * deals.last_message_at NO es "el último mensaje": sólo lo actualizan los
+ * envíos del bot. Si el cliente escribe con el bot en silencio (calificado,
+ * propuesta enviada: justo los que atiende el vendedor) o el vendedor contesta
+ * desde esta app, esa fecha queda vieja y el lead no entra en la página
+ * ordenada por esa columna. Acá se sale de messages, que es la fuente real.
+ * De este conjunto sale la cola "Sin responder": alcanza hasta `rows`
+ * mensajes hacia atrás (5.000 ≈ una semana de tráfico de Roller).
+ */
+export async function getRecentlyActiveLeadsForSeller(
+  seller: SellerRef,
+  opts: { rows?: number; maxLeads?: number } = {},
+): Promise<AirtableLead[]> {
+  const supabase = createSupabaseServiceClient();
+  const pages = Math.max(1, Math.ceil((opts.rows ?? 5000) / 1000));
+  const maxLeads = opts.maxLeads ?? 500;
+
+  const scans = await Promise.all(
+    Array.from({ length: pages }, (_, i) =>
+      supabase
+        .from('messages')
+        .select('lead_id, created_at')
+        .eq('client_id', seller.clientId)
+        .in('role', ['user', 'human_agent'])
+        .order('created_at', { ascending: false })
+        .range(i * 1000, i * 1000 + 999),
+    ),
+  );
+
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const scan of scans) {
+    if (scan.error) throw new Error(`Supabase messages: ${scan.error.message}`);
+    for (const row of (scan.data ?? []) as { lead_id: string | null }[]) {
+      const id = row.lead_id;
+      // messages.lead_id es texto: sólo los que son un deal.id (uuid) sirven para el .in().
+      if (!id || seen.has(id) || !isUuid(id)) continue;
+      seen.add(id);
+      ids.push(id);
+    }
+  }
+  if (ids.length === 0) return [];
+
+  // De a 100 ids: con cientos en un solo .in() se revienta el límite de URL.
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += 100) chunks.push(ids.slice(i, i + 100));
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      supabase
+        .from('deals')
+        .select('*, contacts(*)')
+        .eq('client_id', seller.clientId)
+        .eq('assigned_seller_id', seller.id)
+        .in('id', chunk),
+    ),
+  );
+
+  const sellers = sellerMapFor(seller);
+  const byId = new Map<string, AirtableLead>();
+  for (const res of results) {
+    if (res.error) throw new Error(`Supabase deals: ${res.error.message}`);
+    for (const d of (res.data ?? []) as DealRow[]) byId.set(d.id, mapDealToLead(d, d.contacts, sellers));
+  }
+
+  // En el orden del escaneo: el de actividad más reciente primero.
+  const leads: AirtableLead[] = [];
+  for (const id of ids) {
+    const lead = byId.get(id);
+    if (lead) leads.push(lead);
+    if (leads.length >= maxLeads) break;
+  }
+  return leads;
+}
+
+/**
+ * Cantidad de leads del vendedor por etapa: { all, [etapa]: n }, con la etapa
+ * normalizada como la usa la barra ('Propuesta enviada'). Son conteos, sin
+ * traer filas.
+ */
+export async function getStageCountsForSeller(seller: SellerRef): Promise<Record<string, number>> {
+  const supabase = createSupabaseServiceClient();
+  const { data: stageRows } = await supabase
+    .from('pipeline_stages')
+    .select('stage_name')
+    .eq('client_id', seller.clientId);
+
+  const rawNames = new Set<string>([...Object.keys(STAGE_ORDER)]);
+  for (const r of (stageRows ?? []) as { stage_name: string | null }[]) {
+    const name = (r.stage_name ?? '').trim();
+    if (name) rawNames.add(name);
+  }
+  const names = [...rawNames];
+
+  const countFor = async (stage: string | null): Promise<number> => {
+    let query: any = supabase
+      .from('deals')
+      .select('id', { count: 'exact', head: true })
+      .eq('client_id', seller.clientId)
+      .eq('assigned_seller_id', seller.id);
+    if (stage) query = query.eq('stage', stage);
+    const { count, error } = await query;
+    if (error) throw new Error(`Supabase deals count: ${error.message}`);
+    return count ?? 0;
+  };
+
+  const [all, ...perStage] = await Promise.all([countFor(null), ...names.map((n) => countFor(n))]);
+  const counts: Record<string, number> = { all };
+  names.forEach((name, i) => {
+    const key = normalizeStageName(name);
+    counts[key] = (counts[key] ?? 0) + perStage[i];
+  });
+  return counts;
+}
+
+/**
+ * Un lead puntual, sólo si es de este vendedor (para avisar de un mensaje de
+ * un lead que no está cargado en la bandeja).
+ */
+export async function getLeadForSeller(seller: SellerRef, recordId: string): Promise<AirtableLead | null> {
+  if (!isUuid(recordId)) return null;
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from('deals')
+    .select('*, contacts(*)')
+    .eq('id', recordId)
+    .eq('client_id', seller.clientId)
+    .eq('assigned_seller_id', seller.id)
+    .maybeSingle();
+  if (error) throw new Error(`Supabase deals: ${error.message}`);
+  if (!data) return null;
+  const deal = data as DealRow;
+  return mapDealToLead(deal, deal.contacts, sellerMapFor(seller));
+}
+
 export async function getAllLeads(_source?: AirtableSource): Promise<AirtableLead[]> {
   const supabase = createSupabaseServiceClient();
   const clientId = DEFAULT_CLIENT_ID;

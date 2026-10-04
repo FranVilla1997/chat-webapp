@@ -1,6 +1,13 @@
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server';
-import { getLeadsBySellerName, getPipelineStages } from '@/lib/airtable';
+import {
+  getLeadsPageForSeller,
+  getPipelineStages,
+  getRecentlyActiveLeadsForSeller,
+  getStageCountsForSeller,
+  resolveSellerByName,
+} from '@/lib/airtable';
+import type { AirtableLead } from '@/lib/types';
 import { getSellerProfile } from '@/lib/auth';
 import { hasCrmAccess } from '@/lib/crm-access';
 import { fetchLastMessages } from '@/lib/last-messages';
@@ -37,17 +44,34 @@ export default async function ChatsPage({ searchParams }: ChatsPageProps) {
 
   const airtableBaseId = searchParams.airtable_base_id ?? searchParams.base_id;
   const airtableTableId = searchParams.airtable_table_id ?? searchParams.table_id;
-  const airtableSource = { baseId: airtableBaseId, tableId: airtableTableId };
 
-  const leads = profile.airtable_seller_name
-    ? await getLeadsBySellerName(profile.airtable_seller_name, airtableSource)
-    : [];
-
-  // Último mensaje por lead vía RPC (sin ventana — ver lib/last-messages.ts).
+  // Primera ventana de la bandeja (no la cartera entera): la página de los
+  // más recientes, los conteos por etapa y los leads con actividad reciente.
+  // El resto lo pide ChatList a /api/leads al filtrar, buscar o cargar más.
+  let leads: AirtableLead[] = [];
+  let recent: AirtableLead[] = [];
+  let total = 0;
+  let counts: Record<string, number> = { all: 0 };
   let lastMessages: Record<string, LastMessage> = {};
-  if (leads.length > 0) {
+
+  const seller = profile.airtable_seller_name
+    ? await resolveSellerByName(profile.airtable_seller_name)
+    : null;
+  if (seller) {
+    const [page, stageCounts, recentAll] = await Promise.all([
+      getLeadsPageForSeller(seller),
+      getStageCountsForSeller(seller),
+      getRecentlyActiveLeadsForSeller(seller),
+    ]);
+    leads = page.leads;
+    total = page.total;
+    counts = stageCounts;
+    const inPage = new Set(leads.map((l) => l.RecordID));
+    recent = recentAll.filter((l) => !inPage.has(l.RecordID));
+
+    // Último mensaje por lead vía RPC (sin ventana — ver lib/last-messages.ts).
     const service = createSupabaseServiceClient();
-    lastMessages = await fetchLastMessages(service, profile.client_id, leads.map(l => l.RecordID));
+    lastMessages = await fetchLastMessages(service, profile.client_id, [...leads, ...recent].map(l => l.RecordID));
   }
 
   const crmAccess = await hasCrmAccess(profile.user_id);
@@ -60,6 +84,9 @@ export default async function ChatsPage({ searchParams }: ChatsPageProps) {
   return (
     <ChatList
       initialLeads={leads}
+      initialTotal={total}
+      initialCounts={counts}
+      initialRecent={recent}
       sellerName={profile.name}
       clientId={profile.client_id}
       lastMessages={lastMessages}

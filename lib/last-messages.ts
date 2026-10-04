@@ -6,6 +6,15 @@ export interface LastMessagePreview {
   created_at: string;
 }
 
+// La bandeja muestra una sola línea: mandar el mensaje entero (hay
+// transcripciones de imágenes de miles de caracteres) era el grueso del
+// peso de cada refresco.
+const PREVIEW_MAX_CHARS = 200;
+function preview(content: string | null | undefined): string {
+  const text = String(content ?? '');
+  return text.length > PREVIEW_MAX_CHARS ? `${text.slice(0, PREVIEW_MAX_CHARS)}…` : text;
+}
+
 /**
  * Último mensaje por lead para los previews de la bandeja.
  *
@@ -43,7 +52,7 @@ export async function fetchLastMessages(
   if (!rpcError) {
     for (const r of results) {
       for (const m of (r.data ?? []) as Array<{ lead_id: string; role: string; content: string; created_at: string }>) {
-        out[m.lead_id] = { content: m.content, role: m.role, created_at: m.created_at };
+        out[m.lead_id] = { content: preview(m.content), role: m.role, created_at: m.created_at };
       }
     }
     return out;
@@ -59,7 +68,7 @@ export async function fetchLastMessages(
     .limit(1000);
   for (const msg of (msgs ?? []) as Array<{ lead_id: string; role: string; content: string; created_at: string }>) {
     if (requested.has(msg.lead_id) && !out[msg.lead_id]) {
-      out[msg.lead_id] = { content: msg.content, role: msg.role, created_at: msg.created_at };
+      out[msg.lead_id] = { content: preview(msg.content), role: msg.role, created_at: msg.created_at };
     }
   }
   return out;
