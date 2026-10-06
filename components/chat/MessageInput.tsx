@@ -67,7 +67,7 @@ export function MessageInput({ onSend, onSendAudio, onSendFile, replyTo, onCance
   function handleSubmit(e?: React.FormEvent) {
     e?.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed || disabled || sending) return;
+    if (!trimmed || disabled) return;
     onSend(trimmed);
     setText('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -162,7 +162,10 @@ export function MessageInput({ onSend, onSendAudio, onSendFile, replyTo, onCance
   /* cleanup on unmount */
   useEffect(() => () => { cancelRecording(); }, [cancelRecording]);
 
-  const canSend = !!text.trim() && !disabled && !sending;
+  // Un envío en curso no bloquea nada: los mensajes van a una cola y salen en
+  // orden (como en WhatsApp). `sending` sólo muestra el spinner mientras no hay
+  // texto nuevo que mandar.
+  const canSend = !!text.trim() && !disabled;
 
   /* ── Render: recording mode ──────────────── */
   if (recording) {
@@ -262,11 +265,11 @@ export function MessageInput({ onSend, onSendAudio, onSendFile, replyTo, onCance
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          disabled={disabled || sending}
+          disabled={disabled}
           title="Adjuntar foto, video o PDF"
           style={{
             width: 36, height: 36, borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)',
-            cursor: disabled || sending ? 'not-allowed' : 'pointer',
+            cursor: disabled ? 'not-allowed' : 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0, background: 'rgba(255,255,255,0.06)',
             color: 'rgba(255,255,255,0.55)', transition: 'all 0.2s',
@@ -285,7 +288,7 @@ export function MessageInput({ onSend, onSendAudio, onSendFile, replyTo, onCance
           onBlur={() => setFocused(false)}
           placeholder="Escribí un mensaje..."
           rows={1}
-          disabled={disabled || sending}
+          disabled={disabled}
           style={{
             flex: 1, background: 'transparent', border: 'none', outline: 'none',
             resize: 'none', fontSize: 13.5, lineHeight: 1.55, color: '#f0f0f5',
@@ -298,7 +301,7 @@ export function MessageInput({ onSend, onSendAudio, onSendFile, replyTo, onCance
         {!text.trim() && (
           <button
             onClick={startRecording}
-            disabled={disabled || sending}
+            disabled={disabled}
             title="Grabar audio"
             style={{
               width: 36, height: 36, borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)',
@@ -327,7 +330,7 @@ export function MessageInput({ onSend, onSendAudio, onSendFile, replyTo, onCance
             boxShadow: canSend ? '0 2px 12px rgba(24,93,232,0.4)' : 'none',
           }}
         >
-          {sending ? (
+          {sending && !canSend ? (
             <span style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
           ) : (
             <svg width="14" height="14" viewBox="0 0 16 16" fill="white" style={{ opacity: canSend ? 1 : 0.3, transform: 'translateX(1px)' }}>

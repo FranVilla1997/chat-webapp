@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Message } from '@/lib/types';
 import { readSendFailure, type SendFailure } from '@/lib/send-failure';
 
@@ -14,19 +14,95 @@ interface SendOptions {
   onFailed: (tempId: string) => void;
 }
 
-export function useSendMessage(opts: SendOptions) {
-  const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<SendFailure | null>(null);
+type ReplyTo = { waId: string; preview: string; role: string } | null | undefined;
 
-  async function sendMessage(
-    text: string,
-    replyTo?: { waId: string; preview: string; role: string } | null
-  ) {
+let contador = 0;
+/** Id provisorio único: dos envíos en el mismo milisegundo chocaban con Date.now() solo. */
+export function tempMessageId(): string {
+  contador += 1;
+  return `temp-${Date.now()}-${contador}`;
+}
+
+/**
+ * Envíos en cola, como en WhatsApp: cada mensaje aparece en el chat apenas se
+ * manda y sale cuando le toca, uno por uno y en orden. Antes la caja quedaba
+ * bloqueada hasta que el servidor confirmaba el envío anterior (1 a 3 s), y
+ * escribir tres mensajes seguidos era esperar tres veces.
+ *
+ * `enqueue` sirve para meter en la misma fila los audios y archivos, así no
+ * se adelantan a un texto que ya estaba esperando.
+ */
+export function useSendMessage(opts: SendOptions) {
+  const [pending, setPending] = useState(0);
+  const [sendError, setSendError] = useState<SendFailure | null>(null);
+  const queueRef = useRef<Array<() => Promise<void>>>([]);
+  const runningRef = useRef(false);
+  const optsRef = useRef(opts);
+  optsRef.current = opts;
+
+  async function pump() {
+    if (runningRef.current) return;
+    runningRef.current = true;
+    try {
+      while (queueRef.current.length > 0) {
+        const task = queueRef.current.shift()!;
+        try {
+          await task();
+        } catch {
+          // cada tarea reporta su propio error
+        }
+        setPending((n) => Math.max(0, n - 1));
+      }
+    } finally {
+      runningRef.current = false;
+    }
+  }
+
+  function enqueue(task: () => Promise<void>) {
+    queueRef.current.push(task);
+    setPending((n) => n + 1);
+    void pump();
+  }
+
+  async function deliver(tempId: string, text: string, replyTo: ReplyTo) {
+    const o = optsRef.current;
+    try {
+      const response = await fetch('/api/send-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadPhone: o.leadPhone,
+          leadId: o.leadId,
+          clientId: o.clientId,
+          instance: o.instance,
+          text,
+          ...(replyTo ? { replyTo } : {}),
+        }),
+      });
+
+      if (!response.ok) {
+        setSendError(await readSendFailure(response));
+        o.onFailed(tempId);
+        return;
+      }
+
+      const { message } = await response.json();
+      o.onReplace(tempId, message as Message);
+    } catch (err) {
+      // Fallo de red: nunca se supo si el request llegó.
+      setSendError({
+        detail: err instanceof Error ? err.message : 'Unknown error',
+        evolutionStatus: null,
+      });
+      o.onFailed(tempId);
+    }
+  }
+
+  function sendMessage(text: string, replyTo?: ReplyTo) {
     if (!text.trim()) return;
-    setSending(true);
     setSendError(null);
 
-    const tempId = `temp-${Date.now()}`;
+    const tempId = tempMessageId();
     const optimistic: Message = {
       id: tempId,
       lead_id: opts.leadId,
@@ -46,40 +122,8 @@ export function useSendMessage(opts: SendOptions) {
         : {}),
     };
     opts.onOptimistic(optimistic);
-
-    try {
-      const response = await fetch('/api/send-message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          leadPhone: opts.leadPhone,
-          leadId: opts.leadId,
-          clientId: opts.clientId,
-          instance: opts.instance,
-          text,
-          ...(replyTo ? { replyTo } : {}),
-        }),
-      });
-
-      if (!response.ok) {
-        setSendError(await readSendFailure(response));
-        opts.onFailed(tempId);
-        return;
-      }
-
-      const { message } = await response.json();
-      opts.onReplace(tempId, message as Message);
-    } catch (err) {
-      // Fallo de red: nunca se supo si el request llegó.
-      setSendError({
-        detail: err instanceof Error ? err.message : 'Unknown error',
-        evolutionStatus: null,
-      });
-      opts.onFailed(tempId);
-    } finally {
-      setSending(false);
-    }
+    enqueue(() => deliver(tempId, text, replyTo));
   }
 
-  return { sendMessage, sending, sendError };
+  return { sendMessage, enqueue, sending: pending > 0, sendError };
 }

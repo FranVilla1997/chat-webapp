@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { useMessages } from '@/hooks/useMessages';
-import { useSendMessage } from '@/hooks/useSendMessage';
+import { useSendMessage, tempMessageId } from '@/hooks/useSendMessage';
 import { useFollowups, type Followup } from '@/hooks/useFollowups';
 import { ChatHeader } from './ChatHeader';
 import { MessageBubble } from './MessageBubble';
@@ -623,7 +623,7 @@ export function ChatContainer({
     addOptimisticMessage, markMessageFailed, replaceOptimisticMessage, updateLocalMessage, deleteLocalMessage,
   } = useMessages(leadId, clientId);
 
-  const { sendMessage, sending, sendError } = useSendMessage({
+  const { sendMessage, enqueue, sending, sendError } = useSendMessage({
     leadPhone, leadId, clientId, instance,
     onOptimistic: addOptimisticMessage,
     onReplace: replaceOptimisticMessage,
@@ -644,11 +644,11 @@ export function ChatContainer({
   // Un solo fallo de envío a la vez: el último que haya ocurrido.
   const sendFailure = sendError ?? audioError ?? fileError;
 
-  async function handleSendAudio(base64: string, duration: number, mimeType?: string) {
-    setAudioSending(true);
+  // Audios y archivos entran en la misma cola que los textos: salen en el
+  // orden en que se mandaron.
+  function handleSendAudio(base64: string, duration: number, mimeType?: string) {
     setAudioError(null);
-
-    const tempId = `temp-${Date.now()}`;
+    const tempId = tempMessageId();
     addOptimisticMessage({
       id: tempId, lead_id: leadId, client_id: clientId,
       role: 'human_agent',
@@ -656,7 +656,11 @@ export function ChatContainer({
       was_audio: true,
       created_at: new Date().toISOString(),
     });
+    enqueue(() => deliverAudio(tempId, base64, duration, mimeType));
+  }
 
+  async function deliverAudio(tempId: string, base64: string, duration: number, mimeType?: string) {
+    setAudioSending(true);
     try {
       const res = await fetch('/api/send-audio', {
         method: 'POST',
@@ -678,12 +682,10 @@ export function ChatContainer({
     }
   }
 
-  async function handleSendFile(file: File, caption?: string) {
-    setFileSending(true);
+  function handleSendFile(file: File, caption?: string) {
     setFileError(null);
-
     const kind = file.type.startsWith('image/') ? 'Foto' : file.type.startsWith('video/') ? 'Video' : 'Archivo';
-    const tempId = `temp-${Date.now()}`;
+    const tempId = tempMessageId();
     addOptimisticMessage({
       id: tempId,
       lead_id: leadId,
@@ -692,8 +694,14 @@ export function ChatContainer({
       content: caption ? `${kind}: ${caption}` : `${kind} enviado: ${file.name}`,
       was_audio: false,
       created_at: new Date().toISOString(),
+      // Un archivo fallido no se reintenta desde la burbuja (habría que volver a subirlo).
+      event_metadata: { local_kind: 'file' },
     });
+    enqueue(() => deliverFile(tempId, file, caption));
+  }
 
+  async function deliverFile(tempId: string, file: File, caption?: string) {
+    setFileSending(true);
     try {
       const uploadUrlRes = await fetch('/api/send-file/upload-url', {
         method: 'POST',
@@ -747,7 +755,7 @@ export function ChatContainer({
   // Reintento de un texto que no salió: se saca la burbuja fallida y se vuelve a
   // enviar el mismo contenido (cita incluida, si la tenía), para que el
   // vendedor no tenga que reescribirlo.
-  async function handleRetrySend(message: Message) {
+  function handleRetrySend(message: Message) {
     deleteLocalMessage(message.id);
     const meta = message.event_metadata as Record<string, unknown> | null | undefined;
     const replyTo =
@@ -758,7 +766,7 @@ export function ChatContainer({
             role: String(meta.reply_to_role ?? ''),
           }
         : undefined;
-    await sendMessage(message.content, replyTo);
+    sendMessage(message.content, replyTo);
   }
 
   const { followups } = useFollowups(leadId, clientId);
@@ -1168,7 +1176,7 @@ export function ChatContainer({
                   isOptimistic={String(item.message.id).startsWith('temp-')}
                   failed={item.message.failed}
                   onRetry={
-                    item.message.failed && !item.message.was_audio
+                    item.message.failed && !item.message.was_audio && item.message.event_metadata?.local_kind !== 'file'
                       ? () => handleRetrySend(item.message)
                       : undefined
                   }
