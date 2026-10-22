@@ -22,6 +22,10 @@ export interface Message {
    * (texto recortado, por si el original no está cargado), reply_to_role.
    */
   event_metadata?: Record<string, unknown> | null;
+  /** Vistos de WhatsApp (mensajes salientes): lo escribe el backend al recibir el acuse. */
+  wa_status?: 'sent' | 'delivered' | 'read' | 'played' | null;
+  delivered_at?: string | null;
+  read_at?: string | null;
   /**
    * Solo cliente: el envío optimista falló y el mensaje NO salió por WhatsApp.
    * Sin esto la burbuja quedaba en pantalla como enviada aunque el envío

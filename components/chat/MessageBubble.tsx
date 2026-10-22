@@ -484,18 +484,44 @@ function MessageActions({
   );
 }
 
+/**
+ * Palomitas de WhatsApp para los mensajes que salieron por la línea: ✓ enviado,
+ * ✓✓ entregado, ✓✓ azul + "Visto HH:MM" leído (Franco, 21/10/2026). El estado
+ * lo escribe el backend al recibir los acuses de Evolution (messages.update).
+ */
+function Vistos({ message }: { message?: Message }) {
+  if (!message?.whatsapp_message_id) return null;
+  const st = message.wa_status;
+  if (st === 'read' || st === 'played') {
+    return (
+      <span style={{ ...messageTime, color: '#53bdeb', display: 'inline-flex', gap: 4, alignItems: 'center' }} title={message.read_at ? `Visto ${formatTime(message.read_at)}` : 'Visto'}>
+        <span aria-hidden>✓✓</span>
+        <span>Visto{message.read_at ? ` ${formatTime(message.read_at)}` : ''}</span>
+      </span>
+    );
+  }
+  if (st === 'delivered') {
+    return <span style={messageTime} title={message.delivered_at ? `Entregado ${formatTime(message.delivered_at)}` : 'Entregado'} aria-label="Entregado">✓✓</span>;
+  }
+  return <span style={messageTime} title="Enviado" aria-label="Enviado">✓</span>;
+}
+
 function MessageMetaRow({
   align,
   createdAt,
   actions,
+  message,
 }: {
   align: 'left' | 'right';
   createdAt: string;
   actions?: React.ReactNode;
+  /** Mensaje saliente: habilita las palomitas junto a la hora. */
+  message?: Message;
 }) {
   const time = (
-    <span style={{ ...messageTime, paddingLeft: align === 'left' ? 2 : 0, paddingRight: align === 'right' ? 2 : 0 }}>
-      {formatTime(createdAt)}
+    <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', paddingLeft: align === 'left' ? 2 : 0, paddingRight: align === 'right' ? 2 : 0 }}>
+      {align === 'right' && <Vistos message={message} />}
+      <span style={messageTime}>{formatTime(createdAt)}</span>
     </span>
   );
 
@@ -597,6 +623,7 @@ export function MessageBubble({ message, isOptimistic, failed, onRetry, followup
           <MessageMetaRow
             align="right"
             createdAt={created_at}
+            message={message}
             actions={
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
                 {replyLink}
@@ -650,6 +677,7 @@ export function MessageBubble({ message, isOptimistic, failed, onRetry, followup
           <MessageMetaRow
             align="right"
             createdAt={created_at}
+            message={message}
             actions={
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
                 {replyLink}

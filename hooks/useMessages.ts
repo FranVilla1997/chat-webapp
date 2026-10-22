@@ -64,7 +64,8 @@ function fingerprint(messages: Message[]) {
       const attachments = (message.attachments ?? [])
         .map((attachment) => `${attachment.id}:${attachment.media_type}:${attachment.storage_path}`)
         .join(',');
-      return `${messageId(message)}:${message.role}:${message.content}:${message.created_at}:${attachments}`;
+      // wa_status / read_at: que el polling también refresque las palomitas.
+      return `${messageId(message)}:${message.role}:${message.content}:${message.created_at}:${message.wa_status ?? ''}:${message.read_at ?? ''}:${attachments}`;
     })
     .join('|');
 }
@@ -164,6 +165,24 @@ export function useMessages(leadId: string, clientId: string) {
               return next;
             });
           }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'messages' },
+        (payload) => {
+          // Vistos: el backend actualiza wa_status / delivered_at / read_at
+          // cuando WhatsApp acusa entrega o lectura. También cubre ediciones.
+          const upd = payload.new as Message;
+          if (String(upd.lead_id) !== String(leadId) || String(upd.client_id) !== String(clientId)) return;
+          setMessages((prev) => {
+            const idx = prev.findIndex((m) => String(m.id) === String(upd.id));
+            if (idx === -1) return prev;
+            const next = [...prev];
+            next[idx] = { ...prev[idx], ...upd, attachments: prev[idx].attachments };
+            fingerprintRef.current = fingerprint(next);
+            return next;
+          });
         }
       )
       .on(
