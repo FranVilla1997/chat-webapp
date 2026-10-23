@@ -166,6 +166,41 @@ async function resolveEvolutionConfig(instance: string, clientId?: string): Prom
   throw new Error(`Evolution API no está configurada para la instancia "${instance}".`);
 }
 
+// Corte de Evolution del 23/10/2026 (unos minutos): la app devolvía
+// "fetch failed" al mandar y el vendedor no sabía si reintentar. Un reintento
+// corto absorbe un corte de segundos; lo que no es transitorio (400 número
+// inexistente, 401 key) sale igual. Tope por intento corto: la función de
+// Vercel tiene pocos segundos de vida.
+const FALLO_DE_RED = /fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|socket hang up|other side closed/i;
+
+function esFalloTransitorio(err: unknown): boolean {
+  const e = err as { name?: string; message?: string; cause?: { code?: string; message?: string } } | null;
+  if (!e) return false;
+  if (e.name === 'TimeoutError' || e.name === 'AbortError') return true;
+  if (FALLO_DE_RED.test(String(e.message ?? err))) return true;
+  return FALLO_DE_RED.test(String(e.cause?.code ?? '')) || FALLO_DE_RED.test(String(e.cause?.message ?? ''));
+}
+
+async function fetchConReintento(url: string, init: RequestInit): Promise<Response> {
+  const INTENTOS = 2;
+  for (let intento = 1; ; intento++) {
+    try {
+      const res = await fetch(url, { ...init, signal: AbortSignal.timeout(7_000) });
+      if (intento < INTENTOS && (res.status === 502 || res.status === 503 || res.status === 504)) {
+        await new Promise((r) => setTimeout(r, 1_000));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      if (!esFalloTransitorio(err)) throw err;
+      if (intento >= INTENTOS) {
+        throw new Error('WhatsApp (Evolution) no respondió. Probá de nuevo en unos segundos.');
+      }
+      await new Promise((r) => setTimeout(r, 1_000));
+    }
+  }
+}
+
 async function parseEvolutionError(response: Response): Promise<string> {
   const body = await response.text();
   return body || response.statusText;
@@ -198,7 +233,7 @@ export async function sendWhatsAppMessage(
     payload.quoted = { key: { id: quoted.id }, message: { conversation: quoted.preview ?? '' } };
   }
 
-  const response = await fetch(`${config.baseUrl}/message/sendText/${encodeURIComponent(config.instanceName)}`, {
+  const response = await fetchConReintento(`${config.baseUrl}/message/sendText/${encodeURIComponent(config.instanceName)}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -222,7 +257,7 @@ export async function sendWhatsAppAudio(
 ): Promise<EvolutionMessageResponse> {
   const config = await resolveEvolutionConfig(instance, clientId);
 
-  const response = await fetch(`${config.baseUrl}/message/sendWhatsAppAudio/${encodeURIComponent(config.instanceName)}`, {
+  const response = await fetchConReintento(`${config.baseUrl}/message/sendWhatsAppAudio/${encodeURIComponent(config.instanceName)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: config.apiKey },
     body: JSON.stringify({ number: normalizePhone(number), audio: audioBase64, encoding: true }),
@@ -251,7 +286,7 @@ export async function sendWhatsAppMedia(
 ): Promise<EvolutionMessageResponse> {
   const config = await resolveEvolutionConfig(instance, clientId);
 
-  const response = await fetch(`${config.baseUrl}/message/sendMedia/${encodeURIComponent(config.instanceName)}`, {
+  const response = await fetchConReintento(`${config.baseUrl}/message/sendMedia/${encodeURIComponent(config.instanceName)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: config.apiKey },
     body: JSON.stringify({
