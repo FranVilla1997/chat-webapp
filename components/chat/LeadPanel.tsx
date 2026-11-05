@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { LeadInfo, MessageAttachment } from '@/lib/types';
 import type { Followup } from '@/hooks/useFollowups';
+import type { LeadTagWithCount } from '@/lib/lead-tags';
+import { LeadTagsControl } from './LeadTags';
 
 interface QuoteInChat {
   sentAt: string;
@@ -22,6 +24,12 @@ interface LeadPanelProps {
   onClose: () => void;
   onStageChange?: (stageId: string) => Promise<{ name: string; displayName: string }>;
   onCancelFollowups?: (followupIds: number[]) => Promise<void>;
+  /** ID del deal (para poner y sacar etiquetas). */
+  leadId?: string;
+  /** Catálogo de etiquetas del cliente. Sin esto no se muestra la sección. */
+  tags?: LeadTagWithCount[];
+  onTagsChange?: (tagIds: string[]) => void;
+  onTagCreated?: (tag: LeadTagWithCount) => void;
 }
 
 interface StageOption {
@@ -415,7 +423,7 @@ function QuoteStatusCard({ quote, isProposalStage }: { quote?: QuoteInChat | nul
   );
 }
 
-export function LeadPanel({ lead, followups, followupSentTexts, quoteInChat, open, onClose, onStageChange, onCancelFollowups }: LeadPanelProps) {
+export function LeadPanel({ lead, followups, followupSentTexts, quoteInChat, open, onClose, onStageChange, onCancelFollowups, leadId, tags, onTagsChange, onTagCreated }: LeadPanelProps) {
   const phone = formatPhone(lead.phone);
   const stageBadge = lead.stage ? getStageBadge(lead.stage) : null;
   const isLeadProposalStage = normalizeStageKey(lead.stage) === PROPOSAL_STAGE;
@@ -568,6 +576,20 @@ export function LeadPanel({ lead, followups, followupSentTexts, quoteInChat, ope
             </div>
           )}
         </div>
+
+        {/* Etiquetas manuales — aparte de la etapa */}
+        {leadId && tags && (
+          <>
+            <Divider />
+            <LeadTagsControl
+              dealId={leadId}
+              tags={tags}
+              tagIds={lead.tagIds ?? []}
+              onChange={onTagsChange}
+              onTagCreated={onTagCreated}
+            />
+          </>
+        )}
 
         <Divider />
         <QuoteStatusCard quote={quoteInChat} isProposalStage={isLeadProposalStage} />

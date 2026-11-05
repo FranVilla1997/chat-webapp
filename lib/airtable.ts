@@ -73,6 +73,8 @@ interface DealRow {
   won_amount: number | null;
   external_lead_id: string | null;
   contacts?: ContactRow | null;
+  /** Etiquetas manuales embebidas (lead_tag_assignments). Falta si se trajo sin ellas. */
+  tags?: { tag_id: string }[] | null;
 }
 
 interface ContactRow {
@@ -219,6 +221,7 @@ function mapDealToLead(deal: DealRow, contact: ContactRow | null | undefined, se
 
     source: String(contact?.source ?? ''),
     tags: '',
+    tagIds: (deal.tags ?? []).map((t) => t.tag_id),
     notes: meta(dm, 'notes'),
     created_at: String(deal.created_at ?? ''),
   };
@@ -334,6 +337,21 @@ function sellerMapFor(seller: SellerRef): Map<string, SellerRow> {
   }]]);
 }
 
+// Etiquetas manuales (lead_tags + lead_tag_assignments, ver lib/lead-tags.ts):
+// van embebidas en la consulta de deals, sin viajes extra. PGRST200 =
+// PostgREST no conoce la relación (migración 002_lead_tags del backend sin
+// correr, o esquema sin recargar): se reintenta sin etiquetas para que la
+// bandeja no quede vacía por eso.
+const TAGS_EMBED = 'tags:lead_tag_assignments(tag_id)';
+const TAG_FILTER_EMBED = 'tag_filter:lead_tag_assignments!inner(tag_id)';
+function esErrorDeEtiquetas(error: { code?: string; message?: string } | null | undefined): boolean {
+  return error?.code === 'PGRST200' && /lead_tag_assignments/.test(error.message ?? '');
+}
+function selectDeals(conEtiquetas: boolean, contactsInner = false): string {
+  const base = contactsInner ? '*, contacts!inner(*)' : '*, contacts(*)';
+  return conEtiquetas ? `${base}, ${TAGS_EMBED}` : base;
+}
+
 /** La barra usa 'Propuesta enviada' como clave; en deals conviven las dos formas. */
 function stageVariants(stage: string): string[] {
   if (normalizeStageName(stage) === 'Propuesta enviada') return ['propuesta_enviada', 'Propuesta enviada'];
@@ -364,27 +382,37 @@ export function buildLeadSearchFilter(raw: string | null | undefined): string | 
  */
 export async function getLeadsPageForSeller(
   seller: SellerRef,
-  opts: { stage?: string | null; search?: string | null; limit?: number; offset?: number } = {},
+  opts: { stage?: string | null; search?: string | null; tagId?: string | null; limit?: number; offset?: number } = {},
 ): Promise<SellerLeadsPage> {
   const supabase = createSupabaseServiceClient();
   const limit = Math.min(Math.max(1, opts.limit ?? LEADS_PAGE_SIZE), LEADS_PAGE_MAX);
   const offset = Math.max(0, opts.offset ?? 0);
   const searchFilter = buildLeadSearchFilter(opts.search);
+  const tagId = opts.tagId && isUuid(opts.tagId) ? opts.tagId : null;
 
-  // El inner join sólo hace falta para filtrar por datos del contacto.
-  let query: any = supabase
-    .from('deals')
-    .select(searchFilter ? '*, contacts!inner(*)' : '*, contacts(*)', { count: 'exact' })
-    .eq('client_id', seller.clientId)
-    .eq('assigned_seller_id', seller.id);
+  const consultar = (conEtiquetas: boolean) => {
+    // El inner join sólo hace falta para filtrar por datos del contacto.
+    const partes = [selectDeals(conEtiquetas, Boolean(searchFilter))];
+    // Filtrar por etiqueta: inner join con las asignaciones de ESA etiqueta.
+    if (conEtiquetas && tagId) partes.push(TAG_FILTER_EMBED);
+    let query: any = supabase
+      .from('deals')
+      .select(partes.join(', '), { count: 'exact' })
+      .eq('client_id', seller.clientId)
+      .eq('assigned_seller_id', seller.id);
 
-  if (opts.stage && opts.stage !== 'all') query = query.in('stage', stageVariants(opts.stage));
-  if (searchFilter) query = query.or(searchFilter, { referencedTable: 'contacts' });
+    if (opts.stage && opts.stage !== 'all') query = query.in('stage', stageVariants(opts.stage));
+    if (searchFilter) query = query.or(searchFilter, { referencedTable: 'contacts' });
+    if (conEtiquetas && tagId) query = query.eq('tag_filter.tag_id', tagId);
 
-  const { data, error, count } = await query
-    .order('last_message_at', { ascending: false, nullsFirst: false })
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
+    return query
+      .order('last_message_at', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+  };
+  let res = await consultar(true);
+  if (res.error && esErrorDeEtiquetas(res.error)) res = await consultar(false);
+  const { data, error, count } = res;
   if (error) throw new Error(`Supabase deals: ${error.message}`);
 
   const sellers = sellerMapFor(seller);
@@ -441,22 +469,24 @@ export async function getRecentlyActiveLeadsForSeller(
   // De a 100 ids: con cientos en un solo .in() se revienta el límite de URL.
   const chunks: string[][] = [];
   for (let i = 0; i < ids.length; i += 100) chunks.push(ids.slice(i, i + 100));
-  const results = await Promise.all(
+  const consultar = (conEtiquetas: boolean) => Promise.all(
     chunks.map((chunk) =>
       supabase
         .from('deals')
-        .select('*, contacts(*)')
+        .select(selectDeals(conEtiquetas))
         .eq('client_id', seller.clientId)
         .eq('assigned_seller_id', seller.id)
         .in('id', chunk),
     ),
   );
+  let results = await consultar(true);
+  if (results.some((r) => esErrorDeEtiquetas(r.error))) results = await consultar(false);
 
   const sellers = sellerMapFor(seller);
   const byId = new Map<string, AirtableLead>();
   for (const res of results) {
     if (res.error) throw new Error(`Supabase deals: ${res.error.message}`);
-    for (const d of (res.data ?? []) as DealRow[]) byId.set(d.id, mapDealToLead(d, d.contacts, sellers));
+    for (const d of (res.data ?? []) as unknown as DealRow[]) byId.set(d.id, mapDealToLead(d, d.contacts, sellers));
   }
 
   // En el orden del escaneo: el de actividad más reciente primero.
@@ -516,16 +546,19 @@ export async function getStageCountsForSeller(seller: SellerRef): Promise<Record
 export async function getLeadForSeller(seller: SellerRef, recordId: string): Promise<AirtableLead | null> {
   if (!isUuid(recordId)) return null;
   const supabase = createSupabaseServiceClient();
-  const { data, error } = await supabase
+  const consultar = (conEtiquetas: boolean) => supabase
     .from('deals')
-    .select('*, contacts(*)')
+    .select(selectDeals(conEtiquetas))
     .eq('id', recordId)
     .eq('client_id', seller.clientId)
     .eq('assigned_seller_id', seller.id)
     .maybeSingle();
+  let res = await consultar(true);
+  if (res.error && esErrorDeEtiquetas(res.error)) res = await consultar(false);
+  const { data, error } = res;
   if (error) throw new Error(`Supabase deals: ${error.message}`);
   if (!data) return null;
-  const deal = data as DealRow;
+  const deal = data as unknown as DealRow;
   return mapDealToLead(deal, deal.contacts, sellerMapFor(seller));
 }
 

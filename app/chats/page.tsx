@@ -11,6 +11,8 @@ import type { AirtableLead } from '@/lib/types';
 import { getSellerProfile } from '@/lib/auth';
 import { hasCrmAccess } from '@/lib/crm-access';
 import { fetchLastMessages } from '@/lib/last-messages';
+import { canManageTags, type LeadTagWithCount } from '@/lib/lead-tags';
+import { getTagCountsForSeller, getTenantRoles, listTags } from '@/lib/lead-tags-server';
 import { ChatList } from '@/components/chat/ChatList';
 
 export interface LastMessage {
@@ -53,6 +55,8 @@ export default async function ChatsPage({ searchParams }: ChatsPageProps) {
   let total = 0;
   let counts: Record<string, number> = { all: 0 };
   let lastMessages: Record<string, LastMessage> = {};
+  // Etiquetas manuales del cliente, con cuántos leads del vendedor tiene cada una.
+  let tags: LeadTagWithCount[] = [];
 
   const seller = profile.airtable_seller_name
     ? await resolveSellerByName(profile.airtable_seller_name)
@@ -72,9 +76,16 @@ export default async function ChatsPage({ searchParams }: ChatsPageProps) {
     // Último mensaje por lead vía RPC (sin ventana — ver lib/last-messages.ts).
     const service = createSupabaseServiceClient();
     lastMessages = await fetchLastMessages(service, profile.client_id, [...leads, ...recent].map(l => l.RecordID));
+    // Si las tablas de etiquetas fallan, la bandeja sale igual (sin etiquetas).
+    const [catalogo, tagCounts] = await Promise.all([
+      listTags(service, profile.client_id).catch(() => []),
+      getTagCountsForSeller(service, profile.client_id, seller.id).catch(() => ({} as Record<string, number>)),
+    ]);
+    tags = catalogo.map((tag) => ({ ...tag, count: tagCounts[tag.id] ?? 0 }));
   }
 
   const crmAccess = await hasCrmAccess(profile.user_id);
+  const roles = await getTenantRoles(createSupabaseServiceClient(), profile.user_id, profile.client_id);
 
   // Etapas del pipeline del tenant para la barra lateral. Antes estaban
   // hardcodeadas con las de Roller y un tenant con otro pipeline (SCALA)
@@ -94,6 +105,8 @@ export default async function ChatsPage({ searchParams }: ChatsPageProps) {
       airtableTableId={airtableTableId}
       crmAccess={crmAccess}
       stages={stages}
+      initialTags={tags}
+      canManageTags={canManageTags(roles)}
     />
   );
 }

@@ -1,5 +1,7 @@
 import Image from 'next/image';
 import type { Message, LeadInfo } from '@/lib/types';
+import type { LeadTag } from '@/lib/lead-tags';
+import { TagChip } from './LeadTags';
 
 interface ChatHeaderProps {
   leadPhone: string;
@@ -9,6 +11,8 @@ interface ChatHeaderProps {
   panelOpen?: boolean;
   onTogglePanel?: () => void;
   onBack?: () => void;
+  /** Etiquetas manuales del lead (ya resueltas contra el catálogo). */
+  tags?: LeadTag[];
 }
 
 function isFutureDate(value?: string) {
@@ -40,7 +44,7 @@ const statusConfig = {
 };
 const monoFont = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
 
-export function ChatHeader({ leadPhone, leadInfo, messages, realtimeStatus, panelOpen, onTogglePanel, onBack }: ChatHeaderProps) {
+export function ChatHeader({ leadPhone, leadInfo, messages, realtimeStatus, panelOpen, onTogglePanel, onBack, tags }: ChatHeaderProps) {
   const status = detectStatus(messages, leadInfo);
   const { label, dot, ring } = statusConfig[status];
   const isConnected = realtimeStatus === 'SUBSCRIBED';
@@ -133,6 +137,11 @@ export function ChatHeader({ leadPhone, leadInfo, messages, realtimeStatus, pane
                 </span>
               )}
             </>
+          )}
+          {tags && tags.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
+              {tags.map((tag) => <TagChip key={tag.id} tag={tag} size="xs" />)}
+            </div>
           )}
         </div>
       </div>

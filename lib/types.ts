@@ -88,6 +88,8 @@ export interface LeadInfo {
   botResumeAt?: string;
   botPausedBy?: string;
   fields?: LeadField[];
+  /** Etiquetas manuales (ids de lead_tags). */
+  tagIds?: string[];
 }
 
 export interface SellerProfile {
@@ -157,7 +159,10 @@ export interface AirtableLead {
 
   // Metadata
   source: string;
+  /** Campo legacy de Airtable: siempre ''. Las etiquetas manuales van en tagIds. */
   tags: string;
+  /** Etiquetas manuales (ids de lead_tags). Falta si se trajo sin ellas. */
+  tagIds?: string[];
   notes: string;
   created_at: string;
 }

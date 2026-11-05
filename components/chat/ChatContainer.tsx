@@ -13,6 +13,7 @@ import { LeadPanel } from './LeadPanel';
 import { BotPauseControl } from './BotPauseControl';
 import { SaleModal } from './SaleModal';
 import type { LeadInfo, Message, MessageAttachment } from '@/lib/types';
+import type { LeadTagWithCount } from '@/lib/lead-tags';
 import { friendlySendError, readSendFailure, type SendFailure } from '@/lib/send-failure';
 
 interface ChatContainerProps {
@@ -25,6 +26,10 @@ interface ChatContainerProps {
   airtableBaseId?: string;
   airtableTableId?: string;
   onLeadStageChange?: (recordId: string, stage: string) => void;
+  /** Catálogo de etiquetas del cliente (con conteos). Sin esto no se muestran etiquetas. */
+  tags?: LeadTagWithCount[];
+  onLeadTagsChange?: (recordId: string, tagIds: string[]) => void;
+  onTagCreated?: (tag: LeadTagWithCount) => void;
 }
 
 const QUOTE_APP_URL = process.env.NEXT_PUBLIC_QUOTE_APP_URL ?? 'https://roller-cheaper-quotes.vercel.app/quotes/new';
@@ -616,6 +621,9 @@ export function ChatContainer({
   airtableBaseId,
   airtableTableId,
   onLeadStageChange,
+  tags,
+  onLeadTagsChange,
+  onTagCreated,
 }: ChatContainerProps) {
   const router = useRouter();
   const {
@@ -827,6 +835,12 @@ export function ChatContainer({
     : instance
       ? { stage: currentStage, sourceInstance: instance, botResumeAt }
       : undefined;
+  // Etiquetas del lead resueltas contra el catálogo, para el header.
+  const leadTagIds = enrichedLeadInfo?.tagIds;
+  const headerTags = useMemo(
+    () => (tags ?? []).filter((t) => (leadTagIds ?? []).includes(t.id)),
+    [tags, leadTagIds],
+  );
   const hasLeadInfo = !!(
     enrichedLeadInfo?.name ||
     enrichedLeadInfo?.stage ||
@@ -1080,6 +1094,7 @@ export function ChatContainer({
             panelOpen={effectivePanelOpen}
             onTogglePanel={hasLeadInfo ? () => setPanelOpen(p => !p) : undefined}
             onBack={showBack ? () => router.push('/chats') : undefined}
+            tags={headerTags}
           />
 
           {/* Action bar */}
@@ -1251,6 +1266,10 @@ export function ChatContainer({
             onClose={() => setPanelOpen(false)}
             onStageChange={handleChangeStage}
             onCancelFollowups={handleCancelFollowups}
+            leadId={leadId}
+            tags={tags}
+            onTagsChange={(ids) => onLeadTagsChange?.(leadId, ids)}
+            onTagCreated={onTagCreated}
           />
         )}
       </div>

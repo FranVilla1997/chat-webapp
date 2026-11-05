@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabase';
 import { ChatContainer } from './ChatContainer';
 import { CrmSaleButton } from '@/components/crm/CrmSaleButton';
 import { buildLeadInfoFromAirtable } from '@/lib/utils';
+import { sortTagsByName, type LeadTagWithCount } from '@/lib/lead-tags';
+import { TagChip, tagColor } from './LeadTags';
 import type { AirtableLead } from '@/lib/types';
 import type { AirtableStage } from '@/lib/airtable';
 import type { LastMessage } from '@/app/chats/page';
@@ -26,6 +28,10 @@ interface ChatListProps {
   airtableBaseId?: string;
   airtableTableId?: string;
   crmAccess?: boolean;
+  /** Catálogo de etiquetas manuales del cliente, con conteos del vendedor. */
+  initialTags?: LeadTagWithCount[];
+  /** owner / admin / manager (renombrar y borrar etiquetas es del panel; acá no cambia nada todavía). */
+  canManageTags?: boolean;
   /** Etapas del pipeline del tenant (pipeline_stages), en orden. Si no vienen, se usa FUNNEL. */
   stages?: AirtableStage[];
 }
@@ -77,6 +83,8 @@ interface LeadsPageResponse {
   /** Sólo viene cuando se pide (no en "cargar más"). */
   recent?: AirtableLead[];
   lastMessages: Record<string, LastMessage>;
+  /** Catálogo de etiquetas con conteos del vendedor (viene en cada respuesta). */
+  tags?: LeadTagWithCount[];
 }
 
 function normalizeStageKey(stage?: string) {
@@ -266,7 +274,7 @@ interface Toast {
   content: string;
 }
 
-export function ChatList({ initialLeads, initialTotal, initialCounts, initialRecent, sellerName, clientId, lastMessages, airtableBaseId, airtableTableId, crmAccess, stages }: ChatListProps) {
+export function ChatList({ initialLeads, initialTotal, initialCounts, initialRecent, sellerName, clientId, lastMessages, airtableBaseId, airtableTableId, crmAccess, stages, initialTags = [] }: ChatListProps) {
   const router = useRouter();
   const FUNNEL = useMemo(() => buildFunnel(stages), [stages]);
   // leads = la ventana del filtro actual, ordenada por el servidor.
@@ -279,13 +287,20 @@ export function ChatList({ initialLeads, initialTotal, initialCounts, initialRec
   const [recentLeads, setRecentLeads] = useState<AirtableLead[]>(initialRecent);
   const [newLeadIds, setNewLeadIds] = useState<Set<string>>(new Set());
   const [activeStage, setActiveStage] = useState('all');
+  // Etiqueta manual por la que se filtra (id de lead_tags). Se combina con la
+  // etapa y la búsqueda: las tres van al servidor.
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+  // Catálogo de etiquetas del cliente con cuántos leads del vendedor tiene cada
+  // una. Lo trae cada respuesta de /api/leads, así se mantiene al día solo.
+  const [tags, setTags] = useState<LeadTagWithCount[]>(initialTags);
+  const tagById = useMemo(() => new Map(tags.map((t) => [t.id, t])), [tags]);
   const [serverCounts, setServerCounts] = useState<Record<string, number>>(initialCounts);
   // Total del filtro actual (etapa + búsqueda), venga o no cargado entero.
   const [total, setTotal] = useState(initialTotal);
   const [listLoading, setListLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   // A qué filtro corresponden los leads cargados (lo fija cada respuesta del servidor).
-  const [loadedQuery, setLoadedQuery] = useState({ stage: 'all', q: '' });
+  const [loadedQuery, setLoadedQuery] = useState<{ stage: string; q: string; tag: string | null }>({ stage: 'all', q: '', tag: null });
   const [selectedLead, setSelectedLead] = useState<AirtableLead | null>(null);
   const [msgPreviews, setMsgPreviews] = useState<Record<string, LastMessage>>(lastMessages);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -310,7 +325,7 @@ export function ChatList({ initialLeads, initialTotal, initialCounts, initialRec
   const loadedRef = useRef(loadedLeads);
   loadedRef.current = loadedLeads;
   // Filtro que está pidiendo la lista (lo leen el polling y los realtime).
-  const queryRef = useRef({ stage: 'all', q: '' });
+  const queryRef = useRef<{ stage: string; q: string; tag: string | null }>({ stage: 'all', q: '', tag: null });
   // Cada pedido de lista toma un número; una respuesta vieja no pisa a una nueva.
   const requestSeqRef = useRef(0);
   // Cuántos leads de la ventana se mantienen cargados: una página, más las
@@ -430,10 +445,11 @@ export function ChatList({ initialLeads, initialTotal, initialCounts, initialRec
     showIncomingToast(lead, message.content);
   }
 
-  async function fetchLeadsPage(params: { stage: string; q: string; limit: number; offset: number; recent?: boolean }): Promise<LeadsPageResponse | null> {
+  async function fetchLeadsPage(params: { stage: string; q: string; tag?: string | null; limit: number; offset: number; recent?: boolean }): Promise<LeadsPageResponse | null> {
     const sp = new URLSearchParams({ limit: String(params.limit), offset: String(params.offset) });
     if (params.stage !== 'all') sp.set('stage', params.stage);
     if (params.q) sp.set('q', params.q);
+    if (params.tag) sp.set('tag', params.tag);
     if (params.recent === false) sp.set('recent', '0');
     const res = await fetch(`/api/leads?${sp.toString()}`, { cache: 'no-store' });
     if (!res.ok) return null;
@@ -508,6 +524,7 @@ export function ChatList({ initialLeads, initialTotal, initialCounts, initialRec
     setLoadedQuery(query);
     setTotal(page.total);
     setServerCounts(page.counts);
+    if (page.tags) setTags(page.tags);
     setSelectedLead(current => {
       if (!current) return null;
       return freshAll.find(l => l.RecordID === current.RecordID) ?? current;
@@ -560,6 +577,28 @@ export function ChatList({ initialLeads, initialTotal, initialCounts, initialRec
     }, 250);
   }
 
+  /**
+   * Cambiaron las etiquetas de un lead desde el panel: se refleja en la lista
+   * y en los conteos de la barra al instante (el polling después confirma).
+   */
+  function updateLeadTagsLocally(recordId: string, tagIds: string[]) {
+    const antes = loadedRef.current.find((l) => l.RecordID === recordId)?.tagIds ?? [];
+    const apply = (current: AirtableLead[]) => current.map(lead => (lead.RecordID === recordId ? { ...lead, tagIds } : lead));
+    setLeads(apply);
+    setRecentLeads(apply);
+    setSelectedLead(current => (current?.RecordID === recordId ? { ...current, tagIds } : current));
+    setTags(current => current.map((t) => {
+      const tenia = antes.includes(t.id);
+      const tiene = tagIds.includes(t.id);
+      return tenia === tiene ? t : { ...t, count: Math.max(0, t.count + (tiene ? 1 : -1)) };
+    }));
+  }
+
+  /** Se creó una etiqueta desde el panel del lead: entra al catálogo en memoria. */
+  function addTagToCatalog(tag: LeadTagWithCount) {
+    setTags(current => sortTagsByName([...current.filter((t) => t.id !== tag.id), tag]));
+  }
+
   function updateLeadStageLocally(recordId: string, stage: string) {
     const apply = (current: AirtableLead[]) => current.map(lead => (
       lead.RecordID === recordId ? { ...lead, current_stage: stage, stage_changed_at: new Date().toISOString() } : lead
@@ -601,14 +640,14 @@ export function ChatList({ initialLeads, initialTotal, initialCounts, initialRec
   const serverStage = serverStageFor(activeStage);
   const firstQueryRef = useRef(true);
   useEffect(() => {
-    queryRef.current = { stage: serverStage, q: debouncedSearch };
+    queryRef.current = { stage: serverStage, q: debouncedSearch, tag: activeTag };
     if (firstQueryRef.current) {
       firstQueryRef.current = false;
       return;
     }
     refreshLeads({ reset: true }).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverStage, debouncedSearch]);
+  }, [serverStage, debouncedSearch, activeTag]);
 
   useEffect(() => {
     try {
@@ -754,7 +793,7 @@ export function ChatList({ initialLeads, initialTotal, initialCounts, initialRec
 
   // Los leads cargados ya son los del filtro que está en pantalla (el servidor
   // respondió para esa etapa y esa búsqueda).
-  const listSettled = loadedQuery.stage === serverStage && loadedQuery.q === search.trim();
+  const listSettled = loadedQuery.stage === serverStage && loadedQuery.q === search.trim() && loadedQuery.tag === activeTag;
 
   const filtered = useMemo(() => {
     const windowIds = new Set(leads.map((l) => l.RecordID));
@@ -769,7 +808,9 @@ export function ChatList({ initialLeads, initialTotal, initialCounts, initialRec
       // actividad reciente (y a todo mientras llega la respuesta) se les
       // aplica la misma regla acá.
       const matchSearch = (listSettled && windowIds.has(l.RecordID)) || matchesSearch(l, search);
-      return matchStage && matchSearch;
+      // La etiqueta también se mira acá: los de actividad reciente vienen sin filtrar.
+      const matchTag = !activeTag || (l.tagIds ?? []).includes(activeTag);
+      return matchStage && matchSearch && matchTag;
     });
     return list.sort((a, b) => {
       const aNeedsReply = requiresHumanReply(a, msgPreviews) ? 0 : 1;
@@ -781,7 +822,7 @@ export function ChatList({ initialLeads, initialTotal, initialCounts, initialRec
       if (aNew !== bNew) return aNew - bNew;
       return lastActivityTime(b, msgPreviews) - lastActivityTime(a, msgPreviews);
     });
-  }, [leads, loadedLeads, activeStage, search, listSettled, newLeadIds, msgPreviews]);
+  }, [leads, loadedLeads, activeStage, activeTag, search, listSettled, newLeadIds, msgPreviews]);
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -1109,6 +1150,58 @@ export function ChatList({ initialLeads, initialTotal, initialCounts, initialRec
           })}
         </nav>
 
+        {/* Etiquetas manuales: filtro aparte de la etapa (se combinan). Sólo
+            aparece cuando el cliente tiene alguna; se crean desde el panel del lead. */}
+        {tags.length > 0 && (
+          <div style={{ flexShrink: 0, borderTop: '1px solid #1e1e2a', paddingTop: 10 }}>
+            <p style={{ fontSize: 9, fontWeight: 700, color: '#404050', letterSpacing: '0.12em', textTransform: 'uppercase', padding: '0 18px', margin: '0 0 4px', fontFamily: MONO }}>
+              Etiquetas
+            </p>
+            <nav style={{ maxHeight: 168, overflowY: 'auto' }}>
+              {tags.map((t) => {
+                const isActive = activeTag === t.id;
+                const color = tagColor(t);
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveTag(isActive ? null : t.id)}
+                    title={isActive ? 'Quitar el filtro por etiqueta' : `Ver sólo los leads con «${t.name}»`}
+                    style={{
+                      width: '100%',
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '6px 16px',
+                      background: isActive ? '#12121a' : 'transparent',
+                      border: 'none',
+                      borderLeft: `2px solid ${isActive ? color : 'transparent'}`,
+                      cursor: 'pointer',
+                      transition: 'all 0.1s',
+                    }}
+                  >
+                    <span style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: isActive ? color : `${color}66` }} />
+                    <span style={{
+                      fontSize: 12, flex: 1, textAlign: 'left',
+                      color: isActive ? '#e4e4e8' : '#848484',
+                      fontWeight: isActive ? 600 : 400,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {t.name}
+                    </span>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, fontFamily: MONO,
+                      color: isActive ? color : '#404050',
+                      background: isActive ? `${color}15` : 'transparent',
+                      padding: isActive ? '1px 5px' : undefined,
+                      borderRadius: 3,
+                    }}>
+                      {t.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+        )}
+
         {/* Logout */}
         <div style={{ padding: '12px 12px 20px' }}>
           <div style={{ height: 1, background: '#1e1e2a', marginBottom: 10 }} />
@@ -1243,6 +1336,24 @@ export function ChatList({ initialLeads, initialTotal, initialCounts, initialRec
                 ? `${filtered.length} ${filtered.length === 1 ? 'lead' : 'leads'}`
                 : `${listSettled ? total.toLocaleString('es-AR') : '…'} ${total === 1 && listSettled ? 'lead' : 'leads'}`}
             </p>
+            {activeTag && tagById.get(activeTag) && (
+              <button
+                type="button"
+                onClick={() => setActiveTag(null)}
+                title="Quitar el filtro por etiqueta"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  border: `1px solid ${tagColor(tagById.get(activeTag)!)}55`,
+                  background: `${tagColor(tagById.get(activeTag)!)}1a`,
+                  color: tagColor(tagById.get(activeTag)!),
+                  borderRadius: 999, padding: '3px 8px', fontSize: 9, fontWeight: 800,
+                  cursor: 'pointer', fontFamily: MONO, letterSpacing: '0.04em', maxWidth: 160,
+                }}
+              >
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tagById.get(activeTag)!.name}</span>
+                <span aria-hidden="true">×</span>
+              </button>
+            )}
             {needsReplyCount > 0 && (
               <button
                 type="button"
@@ -1442,6 +1553,14 @@ export function ChatList({ initialLeads, initialTotal, initialCounts, initialRec
                       {lead.score}pts
                     </span>
                   )}
+                  {(lead.tagIds ?? []).length > 0 && (
+                    <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, marginLeft: 6, verticalAlign: 'middle', maxWidth: '100%' }}>
+                      {(lead.tagIds ?? [])
+                        .map((id) => tagById.get(id))
+                        .filter((t): t is LeadTagWithCount => Boolean(t))
+                        .map((t) => <TagChip key={t.id} tag={t} size="xs" />)}
+                    </span>
+                  )}
                   {replyTimer && replyColors && (
                     <span style={{
                       display: 'block',
@@ -1502,6 +1621,9 @@ export function ChatList({ initialLeads, initialTotal, initialCounts, initialRec
             airtableBaseId={airtableBaseId}
             airtableTableId={airtableTableId}
             onLeadStageChange={updateLeadStageLocally}
+            tags={tags}
+            onLeadTagsChange={updateLeadTagsLocally}
+            onTagCreated={addTagToCatalog}
           />
         ) : (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>

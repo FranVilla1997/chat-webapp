@@ -27,5 +27,6 @@ export function buildLeadInfoFromAirtable(lead: AirtableLead): LeadInfo {
     botResumeAt: lead.bot_resume_at,
     botPausedBy: lead.bot_paused_by,
     fields,
+    tagIds: lead.tagIds ?? [],
   };
 }
